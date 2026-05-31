@@ -1,0 +1,24 @@
+name: Enhancement
+description: Improve an existing feature or behavior
+title: "[ENHANCEMENT] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Enhancement Description
+      description: Describe the improvement you’d like to see
+    validations:
+      required: true
+
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Motivation
+      description: Why is this enhancement valuable?
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Any alternative approaches you’ve thought about

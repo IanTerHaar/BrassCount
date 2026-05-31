@@ -1,0 +1,24 @@
+name: Chore
+description: Maintenance, refactoring, or internal tasks
+title: "[CHORE] "
+labels: ["chore"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Chore Description
+      description: Describe the maintenance or cleanup task
+    validations:
+      required: true
+
+  - type: textarea
+    id: reason
+    attributes:
+      label: Reason
+      description: Why does this need to be done?
+
+  - type: textarea
+    id: done
+    attributes:
+      label: Definition of Done
+      description: What does completion look like?
