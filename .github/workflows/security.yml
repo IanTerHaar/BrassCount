@@ -1,0 +1,42 @@
+name: Security Audit
+
+on:
+  push:
+    branches:
+      - main
+      - 'feature/*'
+  schedule:
+    - cron: '0 8 * * 1'      # Every Monday at 8am
+
+jobs:
+  audit:
+    name: npm Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run security audit
+        run: npm audit --audit-level=high
+
+  dependency-review:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
