@@ -1,0 +1,15 @@
+{
+  "expo": {
+    "name": "BrassCount",
+    "slug": "brasscount",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "platforms": ["android"],
+    "android": {
+      "package": "com.brasscount.app"
+    },
+    "ios": {
+      "bundleIdentifier": "com.brasscount.app"
+    }
+  }
+}
