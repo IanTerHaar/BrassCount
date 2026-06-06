@@ -1,0 +1,78 @@
+name: Build & Release
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-release:
+    name: Build APK & Create Release
+    runs-on: ubuntu-latest
+    if: "!contains(github.event.head_commit.message, 'bump version')"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Bump version (smart)
+        id: bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          MESSAGE="${{ github.event.head_commit.message }}"
+
+          if echo "$MESSAGE" | grep -q "#major"; then
+            npm version major -m "bump version to %s"
+            echo "bump_type=major" >> $GITHUB_OUTPUT
+          elif echo "$MESSAGE" | grep -q "#minor"; then
+            npm version minor -m "bump version to %s"
+            echo "bump_type=minor" >> $GITHUB_OUTPUT
+          else
+            npm version patch -m "bump version to %s"
+            echo "bump_type=patch" >> $GITHUB_OUTPUT
+          fi
+
+          echo "new_version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+          git push && git push --tags
+
+      - name: Generate Android project
+        run: npx expo prebuild --platform android --clean
+
+      - name: Make Gradlew executable
+        run: chmod +x android/gradlew
+
+      - name: Build Release APK
+        run: cd android && ./gradlew assembleRelease --no-daemon
+
+      - name: Create GitHub Release with APK
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.bump.outputs.new_version }}
+          name: Release v${{ steps.bump.outputs.new_version }}
+          body: |
+            ## BrassCount v${{ steps.bump.outputs.new_version }}
+
+            **Bump type:** ${{ steps.bump.outputs.bump_type }}
+            **Commit:** ${{ github.event.head_commit.message }}
+          files: android/app/build/outputs/apk/release/app-release-unsigned.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
