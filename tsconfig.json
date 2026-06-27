@@ -19,5 +19,5 @@
     }
   },
   "include": ["**/*.ts", "**/*.tsx", "src/types/**/*.d.ts"],
-  "exclude": ["**/node_modules", "**/Pods", "android", "ios"]
+  "exclude": ["**/node_modules", "android"]
 }

@@ -58,7 +58,6 @@ npm run android
 | `npm run android:release` | Gradle `assembleRelease` (uses debug keystore by default) |
 | `npm run android:bundle`  | Gradle `bundleRelease` (AAB)                              |
 | `npm run android:clean`   | Gradle `clean`                                            |
-| `npm run ios`             | Build & run on iOS (macOS only)                           |
 | `npm run typecheck`       | `tsc --noEmit`                                            |
 | `npm run lint`            | ESLint (`--max-warnings=0`)                               |
 | `npm run lint:fix`        | ESLint with `--fix`                                       |
@@ -72,7 +71,6 @@ npm run android
 ```
 .
 ├── android/                  # Native Android project (applicationId: com.brasscount.app)
-├── ios/                      # Native iOS project (configured but Android-first)
 ├── __tests__/                # Jest tests
 ├── __mocks__/                # Jest manual mocks (e.g. @env)
 ├── src/
@@ -202,17 +200,6 @@ your production keystore**.
 
 > GitHub Actions cron is in **UTC**. `0 6 * * 1` = 06:00 UTC = 08:00 SAST
 > (UTC+2). Change the cron in those two workflows if your timezone differs.
-
-## iOS later
-
-iOS is scaffolded but not the focus. When you're ready:
-
-```sh
-cd ios && pod install && cd ..
-npm run ios
-```
-
-You'll also want to add an `ios` job to `build.yml` running on `macos-latest`.
 
 ## License
 
