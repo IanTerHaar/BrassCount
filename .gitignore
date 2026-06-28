@@ -87,3 +87,5 @@ yarn-error.log
 .DS_Store
 Thumbs.db
 
+# AI
+copilot-instructions.md

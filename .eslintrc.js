@@ -8,7 +8,6 @@ module.exports = {
   ignorePatterns: [
     'node_modules/',
     'android/',
-    'ios/',
     'coverage/',
     '*.config.js',
     'babel.config.js',

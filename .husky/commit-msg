@@ -1,0 +1,37 @@
+#!/bin/sh
+
+# Validate commit message format: must start with a conventional commit keyword
+# Examples: feat: add button, fix: resolve crash, chore: update deps
+
+commit_msg_file=$1
+commit_msg=$(head -n 1 "$commit_msg_file")
+
+# Pattern: keyword(scope)?: message
+# - keyword: feat, fix, chore, docs, refactor, test, build, ci, perf, style, revert
+# - scope: optional, e.g. (auth)
+# - message: required, non-empty
+pattern="^(feat|fix|chore|docs|refactor|test|build|ci|perf|style|revert)(\([a-z0-9\-]+\))?: .+"
+
+if ! echo "$commit_msg" | grep -qE "$pattern"; then
+  echo ""
+  echo "Commit message must start with a conventional commit keyword!"
+  echo ""
+  echo "Allowed formats:"
+  echo "  feat: add new feature"
+  echo "  feat(scope): add new feature in a scope"
+  echo "  fix: resolve a bug"
+  echo "  fix(auth): fix login issue"
+  echo "  chore: update dependencies"
+  echo "  docs: update documentation"
+  echo "  refactor: restructure code"
+  echo "  test: add or update tests"
+  echo "  build: build system changes"
+  echo "  ci: CI/CD workflow changes"
+  echo "  perf: performance improvements"
+  echo "  style: code style changes (no logic)"
+  echo "  revert: revert a previous commit"
+  echo ""
+  echo "Your message: '$commit_msg'"
+  echo ""
+  exit 1
+fi
