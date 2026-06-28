@@ -1,0 +1,17 @@
+Copyright (c) 2026 Ian Ter Haar
+All rights reserved.
+
+Permission to use, copy, modify, or distribute this software or any
+derivative works for commercial purposes is expressly withheld without
+prior written permission from the copyright holder.
+
+This repository is published publicly to use GitHub Actions' free runners
+for CI. Public availability of source code does not imply a permissive
+license. If you require a commercial license or permission to redistribute
+parts of this code, contact: [ianthatwork@gmail.com]
+
+NO WARRANTY
+This software is provided "as is", without warranty of any kind, express
+or implied. In no event shall the copyright holder be liable for any
+claim, damages, or other liability arising from the use or distribution
+of the software.
