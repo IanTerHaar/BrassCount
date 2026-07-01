@@ -62,7 +62,7 @@ jobs:
         with:
           script: |
             const required = [
-              'PR Check',
+              'Pull Request Check',
               'Build (Android)',
               'Lint & Type Check',
               'Tests',
