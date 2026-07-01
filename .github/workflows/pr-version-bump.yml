@@ -8,7 +8,7 @@ name: Pull Request Version Bump
 on:
   workflow_run:
     workflows:
-      - PR Check
+      - Pull Request Check
       - Build (Android)
       - Lint & Type Check
       - Tests
