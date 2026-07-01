@@ -1,0 +1,136 @@
+name: Automated Tagging
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  tag-and-release:
+    name: Tag
+    runs-on: ubuntu-latest
+    # Defensive guard: the bot should never push directly to main (PRs only),
+    # but skip anyway if the triggering actor is the versionator bot.
+    if: >-
+      !contains(github.triggering_actor, 'versionator-9000')
+    permissions:
+      contents: write
+    steps:
+      # 1. Generate the installation access token for your GitHub App ruleset bypass
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_PRIVATE_KEY }}
+
+      # 2. Checkout using your ruleset-exempt app token; fetch full history,
+      # then force-fetch tags so the prune/compare logic sees every tag.
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          fetch-depth: 0
+
+      - name: Fetch tags
+        run: git fetch --tags --force
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # 3. Detect bump type by comparing package.json against the latest tag.
+      # The version bump commit itself is produced by pr-version.yml before
+      # the PR merges, so package.json is already updated when we get here.
+      - name: Determine bump type
+        id: detect
+        run: |
+          set -e
+          CURRENT="$(node -p "require('./package.json').version")"
+          LATEST_TAG="$(git tag --sort=-v:refname | head -n1)"
+
+          if [ -z "$LATEST_TAG" ]; then
+            LATEST_VERSION="0.0.0"
+            BUMP="major"
+          else
+            LATEST_VERSION="${LATEST_TAG#v}"
+            IFS='.' read -r CUR_MAJOR CUR_MINOR CUR_PATCH <<< "$CURRENT"
+            IFS='.' read -r LAT_MAJOR LAT_MINOR LAT_PATCH <<< "$LATEST_VERSION"
+
+            if [ "$CUR_MAJOR" -gt "$LAT_MAJOR" ]; then
+              BUMP="major"
+            elif [ "$CUR_MAJOR" -eq "$LAT_MAJOR" ] && [ "$CUR_MINOR" -gt "$LAT_MINOR" ]; then
+              BUMP="minor"
+            elif [ "$CUR_MAJOR" -eq "$LAT_MAJOR" ] && [ "$CUR_MINOR" -eq "$LAT_MINOR" ] && [ "$CUR_PATCH" -gt "$LAT_PATCH" ]; then
+              BUMP="patch"
+            else
+              BUMP="none"
+            fi
+          fi
+
+          echo "Current: $CURRENT | Latest tag: ${LATEST_TAG:-<none>} | Bump: $BUMP"
+          echo "bump_type=$BUMP" >> $GITHUB_OUTPUT
+          echo "new_version=$CURRENT" >> $GITHUB_OUTPUT
+          echo "latest_version=$LATEST_VERSION" >> $GITHUB_OUTPUT
+
+      # 4. Create and push the annotated tag for minor/major bumps.
+      # Patches are intentionally NOT tagged.
+      - name: Create and push tag
+        if: steps.detect.outputs.bump_type == 'minor' || steps.detect.outputs.bump_type == 'major'
+        run: |
+          set -e
+          NEW_VERSION="${{ steps.detect.outputs.new_version }}"
+
+          git config user.name "versionator-9000[bot]"
+          git config user.email "versionator-9000[bot]@users.noreply.github.com"
+
+          git tag -a "v${NEW_VERSION}" -m "chore: bump version to v${NEW_VERSION}"
+
+          # Push with retry: re-fetch tags between attempts in case the remote
+          # tag list has shifted underneath us.
+          attempt=1
+          max_attempts=5
+          until git push origin "v${NEW_VERSION}"; do
+            if [ "$attempt" -ge "$max_attempts" ]; then
+              echo "Tag push failed after $max_attempts attempts" >&2
+              exit 1
+            fi
+            echo "Push rejected (attempt $attempt/$max_attempts). Re-fetching tags and retrying..."
+            git fetch --tags --force
+            attempt=$((attempt + 1))
+          done
+
+      # 5. Prune old tags — keep only the 10 most recent (by creation date).
+      # Runs only when a new tag was created (minor/major bumps).
+      - name: Prune old tags
+        if: steps.detect.outputs.bump_type == 'minor' || steps.detect.outputs.bump_type == 'major'
+        run: |
+          set -e
+          KEEP=10
+
+          # Ensure local tag list matches the remote so we don't miss any.
+          git fetch --tags --prune --prune-tags origin
+
+          # List all tags newest-first by creation date, skip the first $KEEP,
+          # the rest are candidates for deletion.
+          mapfile -t OLD_TAGS < <(
+            git for-each-ref --sort=-creatordate --format='%(refname:short)' refs/tags \
+              | tail -n +$((KEEP + 1))
+          )
+
+          if [ "${#OLD_TAGS[@]}" -eq 0 ]; then
+            echo "No tags to prune (have $(git tag | wc -l), keeping $KEEP)."
+            exit 0
+          fi
+
+          echo "Pruning ${#OLD_TAGS[@]} old tag(s): ${OLD_TAGS[*]}"
+
+          # Delete on the remote in one atomic push (refspecs prefixed with ':').
+          REFSPECS=()
+          for tag in "${OLD_TAGS[@]}"; do
+            REFSPECS+=(":refs/tags/${tag}")
+          done
+          git push origin "${REFSPECS[@]}"
+
+          # Then delete locally.
+          git tag -d "${OLD_TAGS[@]}"
