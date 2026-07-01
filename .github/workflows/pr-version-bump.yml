@@ -1,0 +1,254 @@
+name: Pull Request Version Bump
+
+# Runs AFTER the other PR workflows finish, not alongside them. If we ran on
+# `pull_request` directly, the bump commit produced here would land on the PR
+# branch mid-flight and cancel the in-progress lint/test/build runs. Instead
+# we listen for their completion via `workflow_run`, then verify that every
+# required workflow succeeded for the same head SHA before pushing the bump.
+on:
+  workflow_run:
+    workflows:
+      - PR Check
+      - Build (Android)
+      - Lint & Type Check
+      - Tests
+    types: [completed]
+    # `branches-ignore` on workflow_run matches the triggering run's
+    # head_branch. For push events on main that's "main", so we exclude it.
+    # For pull_request events the head_branch is the PR source branch, which
+    # is never "main" — so PR completions still trigger this workflow. This
+    # prevents "Skipped" entries from cluttering the Actions tab whenever the
+    # gated workflows run on main.
+    branches-ignore:
+      - main
+
+# Every completion of one of the four gated workflows fires this workflow,
+# so we get up to four runs per PR push. Group by the PR head SHA and cancel
+# in-progress runs: as each new completion arrives, it cancels the previous
+# pr-version run. Only the run that fires after the LAST gated workflow
+# finishes survives, at which point the gate passes and the bump happens.
+# github.event.workflow_run.head_sha is stable across all four triggering
+# workflows for the same PR commit.
+concurrency:
+  group: pr-version-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: true
+
+jobs:
+  # Gate: only proceed if the triggering run was for a same-repo PR, was not
+  # triggered by our own bot's push, and every required workflow has completed
+  # successfully for this exact head SHA.
+  gate:
+    name: Verify PR workflows succeeded
+    runs-on: ubuntu-latest
+    if: >-
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_repository.full_name == github.event.workflow_run.repository.full_name &&
+      !contains(github.event.workflow_run.head_commit.author.email, 'versionator-9000') &&
+      !contains(github.event.workflow_run.head_commit.author.name, 'versionator-9000')
+    permissions:
+      actions: read
+      pull-requests: read
+    outputs:
+      proceed: ${{ steps.check.outputs.proceed }}
+      pr_number: ${{ steps.pr.outputs.number }}
+      pr_title: ${{ steps.pr.outputs.title }}
+      pr_head_ref: ${{ steps.pr.outputs.head_ref }}
+      pr_head_repo: ${{ steps.pr.outputs.head_repo }}
+    steps:
+      - name: Check that all required PR workflows succeeded for this SHA
+        id: check
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const required = [
+              'PR Check',
+              'Build (Android)',
+              'Lint & Type Check',
+              'Tests',
+            ];
+            const headSha = context.payload.workflow_run.head_sha;
+
+            const { data } = await github.rest.actions.listWorkflowRunsForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              head_sha: headSha,
+              event: 'pull_request',
+              per_page: 100,
+            });
+
+            const summary = {};
+            for (const name of required) {
+              const runs = data.workflow_runs
+                .filter(r => r.name === name)
+                .sort((a, b) => b.run_number - a.run_number);
+
+              if (runs.length === 0) {
+                core.info(`Workflow "${name}" has no runs yet for ${headSha}; waiting for it to complete.`);
+                core.setOutput('proceed', 'false');
+                return;
+              }
+
+              const latest = runs[0];
+              summary[name] = `${latest.status}/${latest.conclusion}`;
+
+              if (latest.status !== 'completed') {
+                core.info(`Workflow "${name}" is still ${latest.status}; waiting.`);
+                core.setOutput('proceed', 'false');
+                return;
+              }
+              if (latest.conclusion !== 'success') {
+                core.info(`Workflow "${name}" concluded with "${latest.conclusion}"; skipping bump.`);
+                core.setOutput('proceed', 'false');
+                return;
+              }
+            }
+
+            core.info('All required workflows succeeded: ' + JSON.stringify(summary));
+            core.setOutput('proceed', 'true');
+
+      - name: Find open PR for this head SHA
+        if: steps.check.outputs.proceed == 'true'
+        id: pr
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const headSha = context.payload.workflow_run.head_sha;
+            const { data: prs } = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              per_page: 100,
+            });
+            const pr = prs.find(p => p.head.sha === headSha);
+            if (!pr) {
+              core.info(`No open PR found with head SHA ${headSha}; nothing to do.`);
+              return;
+            }
+            // Defensive base-branch check. The gated workflows are all
+            // pull_request: branches: [main] today, so we should never see
+            // a non-main PR here — but if that ever changes upstream, bail
+            // out rather than silently bump the wrong kind of PR.
+            if (pr.base.ref !== 'main') {
+              core.info(`PR #${pr.number} targets "${pr.base.ref}", not "main"; skipping bump.`);
+              return;
+            }
+            core.setOutput('number', String(pr.number));
+            core.setOutput('title', pr.title);
+            core.setOutput('head_ref', pr.head.ref);
+            core.setOutput('head_repo', pr.head.repo.full_name);
+
+  bump-pr-version:
+    name: Bump Version on PR Branch
+    needs: gate
+    if: >-
+      needs.gate.outputs.proceed == 'true' &&
+      needs.gate.outputs.pr_number != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: read
+    steps:
+      # 1. Generate the installation access token for your GitHub App ruleset bypass
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_PRIVATE_KEY }}
+
+      # 2. Checkout the PR head branch using your ruleset-exempt app token
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.gate.outputs.pr_head_ref }}
+          repository: ${{ needs.gate.outputs.pr_head_repo }}
+          token: ${{ steps.app-token.outputs.token }}
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # 3. Bump version on the PR branch using the Bot's Git identity.
+      # We never rewrite history here — every bump is a new commit stacked on
+      # top of the PR branch. Only the most recent bump determines the version
+      # at merge time, but local clones of the PR branch always stay in sync.
+      # As an optimization, we skip if the most recent bot bump on the branch
+      # already used the same bump type (e.g., cosmetic title edits that don't
+      # change #major/#minor produce no churn).
+      - name: Bump version
+        id: bump
+        env:
+          PR_TITLE: ${{ needs.gate.outputs.pr_title }}
+          PR_HEAD_REF: ${{ needs.gate.outputs.pr_head_ref }}
+        run: |
+          set -e
+          git config user.name "versionator-9000[bot]"
+          git config user.email "versionator-9000[bot]@users.noreply.github.com"
+
+          if echo "$PR_TITLE" | grep -q "#major"; then
+            BUMP=major
+          elif echo "$PR_TITLE" | grep -q "#minor"; then
+            BUMP=minor
+          else
+            BUMP=patch
+          fi
+
+          # No-op guard: walk back through consecutive bot bump commits at HEAD
+          # and find the most recent bump type. If it matches what we'd do now,
+          # there is nothing to do — skip cleanly.
+          BOT_EMAIL="versionator-9000[bot]@users.noreply.github.com"
+          LAST_BOT_BUMP=""
+          i=0
+          while true; do
+            SUBJ="$(git log -1 --pretty=%s "HEAD~${i}" 2>/dev/null || true)"
+            EMAIL="$(git log -1 --pretty=%ae "HEAD~${i}" 2>/dev/null || true)"
+            if [ -z "$SUBJ" ]; then break; fi
+            if [ "$EMAIL" = "$BOT_EMAIL" ] \
+              && echo "$SUBJ" | grep -Eq '^chore: bump version to v.* \((major|minor|patch)\) \[skip ci\]$'; then
+              LAST_BOT_BUMP="$(echo "$SUBJ" | sed -E 's/^.*\((major|minor|patch)\).*$/\1/')"
+              break
+            fi
+            # Stop scanning once we hit a non-bot commit (don't skip over user work).
+            break
+          done
+
+          if [ -n "$LAST_BOT_BUMP" ] && [ "$LAST_BOT_BUMP" = "$BUMP" ]; then
+            echo "Most recent bot bump on this branch is already '${BUMP}'. Nothing to do."
+            echo "skipped=1" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Never create tags on PR branches — tags are created when merged into main.
+          npm --no-git-tag-version version "$BUMP"
+          NEW_VERSION="$(node -p "require('./package.json').version")"
+
+          # Bump type is embedded in the commit subject so future runs of this
+          # workflow can detect it without re-parsing the PR title.
+          # [skip ci] prevents this commit from re-triggering other CI
+          # workflows. As a belt-and-braces guard, this workflow is also
+          # triggered by workflow_run (not pull_request) and the gate job
+          # short-circuits if the head commit was authored by this bot.
+          git commit -a -m "chore: bump version to v${NEW_VERSION} (${BUMP}) [skip ci]"
+
+          echo "bump_type=$BUMP" >> $GITHUB_OUTPUT
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "skipped=0" >> $GITHUB_OUTPUT
+
+          # Plain push with retry. We never rewrite history, so no force-push
+          # is needed. If the remote has moved ahead, rebase our bump commit
+          # onto it and try again.
+          attempt=1
+          max_attempts=5
+          until git push origin "HEAD:${PR_HEAD_REF}"; do
+            if [ "$attempt" -ge "$max_attempts" ]; then
+              echo "Push failed after $max_attempts attempts" >&2
+              exit 1
+            fi
+            echo "Push rejected (attempt $attempt/$max_attempts). Rebasing onto origin/${PR_HEAD_REF} and retrying..."
+            git fetch origin "$PR_HEAD_REF"
+            git rebase "origin/${PR_HEAD_REF}"
+            attempt=$((attempt + 1))
+          done
