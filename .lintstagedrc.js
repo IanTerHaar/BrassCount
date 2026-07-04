@@ -13,6 +13,7 @@ const ESLINT_IGNORE_BASENAMES = new Set([
   '.eslintrc.js',
   '.prettierrc.js',
   '.lintstagedrc.js',
+  'eslint.config.js',
 ]);
 
 const isLintable = file => !ESLINT_IGNORE_BASENAMES.has(path.basename(file));
