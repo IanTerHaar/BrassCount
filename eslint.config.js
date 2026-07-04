@@ -8,11 +8,11 @@ module.exports = [
       'build/',
       'dist/',
       '.bundle/',
-      '*.config.js',
     ]),
   },
+  // TypeScript and JSX files (with project)
   {
-    files: ['**/*.{js,jsx,ts,tsx}'],
+    files: ['src/**/*.{ts,tsx}'],
     languageOptions: {
       parser: tsParser,
       parserOptions: {
@@ -20,6 +20,23 @@ module.exports = [
         sourceType: 'module',
         ecmaFeatures: { jsx: true },
         project: './tsconfig.json',
+      },
+    },
+    settings: base.settings || {},
+    plugins: {
+      import: require('eslint-plugin-import'),
+    },
+    rules: base.rules || {},
+  },
+  // JavaScript files (without project)
+  {
+    files: ['**/*.{js,jsx}'],
+    languageOptions: {
+      parser: tsParser,
+      parserOptions: {
+        ecmaVersion: 2020,
+        sourceType: 'module',
+        ecmaFeatures: { jsx: true },
       },
     },
     settings: base.settings || {},
