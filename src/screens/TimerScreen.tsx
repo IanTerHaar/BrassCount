@@ -4,7 +4,7 @@ import { Button } from '@components/Button';
 import { useTheme } from '@hooks/useTheme';
 import { useCounterStore } from '@store/counterStore';
 
-export const HomeScreen = () => {
+export const TimerScreen = () => {
   const { colors, spacing } = useTheme();
   const count = useCounterStore(state => state.count);
   const increment = useCounterStore(state => state.increment);
