@@ -60,6 +60,7 @@
     "node": ">= 22.11.0"
   },
   "resolutions": {
+    "brace-expansion": "^5.0.7",
     "fast-xml-parser": "^4.5.8",
     "js-yaml": "^4.1.0",
     "@istanbuljs/load-nyc-config/js-yaml": "^4.1.0"
