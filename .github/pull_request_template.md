@@ -12,7 +12,17 @@ Explain what this PR changes.
 
 -
 
+### Type of Change
+
+<!-- Check one or more that apply. The autolabeler workflow uses these to label the PR. -->
+
+- [ ] bug
+- [ ] chore
+- [ ] dependencies
+- [ ] documentation
+- [ ] feature
+
 ### Checklist
 
-- [] Code works as expected
-- [] Tests updated and passing
+- [ ] Code works as expected
+- [ ] Tests updated and passing
