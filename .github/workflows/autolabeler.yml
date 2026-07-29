@@ -1,0 +1,67 @@
+name: Autolabeler
+
+on:
+  pull_request_target:
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Apply labels from PR checkboxes
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const KNOWN = ['bug', 'chore', 'dependencies', 'documentation', 'feature'];
+            const body = context.payload.pull_request.body || '';
+
+            const checked = new Set();
+            const unchecked = new Set();
+
+            const lineRe = /^\s*[-*]\s*\[( |x|X)\]\s*(.+?)\s*$/gm;
+            let m;
+            while ((m = lineRe.exec(body)) !== null) {
+              const isChecked = m[1].toLowerCase() === 'x';
+              const label = m[2].trim().toLowerCase();
+              if (KNOWN.includes(label)) {
+                if (isChecked) checked.add(label);
+                else unchecked.add(label);
+              }
+            }
+
+            const { owner, repo } = context.repo;
+            const prNumber = context.payload.pull_request.number;
+
+            const current = await github.rest.issues.listLabelsOnIssue({
+              owner, repo, issue_number: prNumber,
+            });
+            const currentNames = new Set(current.data.map(l => l.name));
+
+            const toAdd = [...checked].filter(l => !currentNames.has(l));
+            const toRemove = [...unchecked].filter(l => currentNames.has(l) && !checked.has(l));
+
+            if (toAdd.length > 0) {
+              core.info(`Adding labels: ${toAdd.join(', ')}`);
+              await github.rest.issues.addLabels({
+                owner, repo, issue_number: prNumber, labels: toAdd,
+              });
+            }
+
+            for (const label of toRemove) {
+              core.info(`Removing label: ${label}`);
+              try {
+                await github.rest.issues.removeLabel({
+                  owner, repo, issue_number: prNumber, name: label,
+                });
+              } catch (err) {
+                if (err.status !== 404) throw err;
+              }
+            }
+
+            if (toAdd.length === 0 && toRemove.length === 0) {
+              core.info('No label changes needed.');
+            }
