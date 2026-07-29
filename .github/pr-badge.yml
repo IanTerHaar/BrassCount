@@ -1,0 +1,23 @@
+- label: New Code
+  message: 'Commits: $payload.pull_request.commits | Files Changed: $payload.pull_request.changed_files | Additions: $payload.pull_request.additions-$payload.pull_request.deletions'
+  color: '#dddd00'
+
+- label: "PR Size"
+  message: "Large"
+  color: "red"
+  when: "$additions >= 500"
+
+- label: "PR Size"
+  message: "Medium"
+  color: "yellow"
+  when: "$additions > 200 && $additions < 500"
+
+- label: "PR Size"
+  message: "Small"
+  color: "green"
+  when: "$additions <= 200"
+  
+- label: '#$prNumber'
+  message: '$payload.pull_request.user.login /$payload.pull_request.head.ref → $payload.repository.full_name'
+  color: '#ab5afc'
+  url: 'https://github.com/$slug/tree/$branchName'
