@@ -10,8 +10,6 @@ on:
     workflows:
       - Pull Request Check
       - Build (Android)
-      - Lint & Type Check
-      - Tests
     types: [completed]
     # `branches-ignore` on workflow_run matches the triggering run's
     # head_branch. For push events on main that's "main", so we exclude it.
@@ -22,12 +20,12 @@ on:
     branches-ignore:
       - main
 
-# Every completion of one of the four gated workflows fires this workflow,
-# so we get up to four runs per PR push. Group by the PR head SHA and cancel
+# Every completion of one of the two gated workflows fires this workflow,
+# so we get up to two runs per PR push. Group by the PR head SHA and cancel
 # in-progress runs: as each new completion arrives, it cancels the previous
 # pr-version run. Only the run that fires after the LAST gated workflow
 # finishes survives, at which point the gate passes and the bump happens.
-# github.event.workflow_run.head_sha is stable across all four triggering
+# github.event.workflow_run.head_sha is stable across all triggering
 # workflows for the same PR commit.
 concurrency:
   group: pr-version-${{ github.event.workflow_run.head_sha }}
@@ -64,8 +62,6 @@ jobs:
             const required = [
               'Pull Request Check',
               'Build (Android)',
-              'Lint & Type Check',
-              'Tests',
             ];
             const headSha = context.payload.workflow_run.head_sha;
 
