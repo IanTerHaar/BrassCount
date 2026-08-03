@@ -1,6 +1,6 @@
 {
   "name": "BrassCount",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "private": true,
   "scripts": {
     "android": "react-native run-android",
@@ -52,7 +52,7 @@
     "jest": "^29.7.0",
     "lint-staged": "^17.0.8",
     "prettier": "3.9.4",
-    "react-native-dotenv": "^3.4.11",
+    "react-native-dotenv": "^4.1.1",
     "react-test-renderer": "19.2.7",
     "typescript": "^6.0.3"
   },
