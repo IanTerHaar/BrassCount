@@ -2,8 +2,7 @@ name: Security Audit
 
 on:
   schedule:
-    # Monday 06:00 UTC = Monday 08:00 SAST (UTC+2)
-    - cron: '0 6 * * 1'
+    - cron: '0 4 * * 1'
   workflow_dispatch:
   push:
     branches: [main]
