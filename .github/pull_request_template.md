@@ -21,6 +21,7 @@ Explain what this PR changes.
 - [ ] dependencies
 - [ ] documentation
 - [ ] feature
+- [ ] security
 
 ### Checklist
 
