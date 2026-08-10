@@ -1,0 +1,24 @@
+name: Version Bump
+
+on:
+  push:
+    branches: ['main']
+
+permissions:
+  contents: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run version bump
+        uses: IanTerHaar/auto-version-bump@v3.1.0
+        with:
+          app-id: ${{ secrets.BOT_APP_ID }}
+          app-private-key: ${{ secrets.BOT_PRIVATE_KEY }}
+          create-tag: true
+          tag-prefix: 'v'
+          tag-patches: false
+          prune-tags: true
