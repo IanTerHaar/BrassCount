@@ -1,11 +1,21 @@
-import { StyleSheet, Text, TouchableOpacity } from 'react-native';
+import {
+  StyleSheet,
+  TouchableOpacity,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
 
+import { Typography } from '@components/Typography';
 import { useTheme } from '@hooks/useTheme';
+
+type ButtonVariant = 'primary' | 'secondary';
 
 type ButtonProps = {
   label: string;
   onPress: () => void;
-  variant?: 'primary' | 'secondary';
+  variant?: ButtonVariant;
+  disabled?: boolean;
+  style?: StyleProp<ViewStyle>;
   testID?: string;
 };
 
@@ -13,47 +23,40 @@ export const Button = ({
   label,
   onPress,
   variant = 'primary',
+  disabled = false,
+  style,
   testID,
 }: ButtonProps) => {
-  const { colors, spacing, radius } = useTheme();
+  const theme = useTheme();
   const isPrimary = variant === 'primary';
 
-  const containerStyle = StyleSheet.flatten([
-    styles.base,
-    {
-      backgroundColor: isPrimary ? colors.primary : colors.surface,
-      borderColor: colors.border,
-      paddingVertical: spacing.sm,
-      paddingHorizontal: spacing.md,
-      borderRadius: radius.md,
-    },
-  ]);
-
-  const labelStyle = StyleSheet.flatten([
-    styles.label,
-    { color: isPrimary ? '#ffffff' : colors.text },
-  ]);
+  const containerStyle: ViewStyle = {
+    backgroundColor: isPrimary ? theme.colors.primary : theme.colors.surface,
+    borderColor: theme.colors.border,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: theme.radius.md,
+    paddingVertical: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
+    opacity: disabled ? 0.5 : 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  };
 
   return (
     <TouchableOpacity
       testID={testID}
       onPress={onPress}
+      disabled={disabled}
       accessibilityRole="button"
-      style={containerStyle}
+      accessibilityState={{ disabled }}
+      style={style ? [containerStyle, style] : containerStyle}
     >
-      <Text style={labelStyle}>{label}</Text>
+      <Typography
+        variant="bodyStrong"
+        color={isPrimary ? 'textOnPrimary' : 'textPrimary'}
+      >
+        {label}
+      </Typography>
     </TouchableOpacity>
   );
 };
-
-const styles = StyleSheet.create({
-  base: {
-    borderWidth: StyleSheet.hairlineWidth,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  label: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-});

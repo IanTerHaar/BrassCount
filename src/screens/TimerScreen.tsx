@@ -1,27 +1,24 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { Button } from '@components/Button';
+import { Screen } from '@components/Screen';
+import { Typography } from '@components/Typography';
 import { useTheme } from '@hooks/useTheme';
 import { useCounterStore } from '@store/counterStore';
 
 export const TimerScreen = () => {
-  const { colors, spacing } = useTheme();
+  const theme = useTheme();
   const count = useCounterStore(state => state.count);
   const increment = useCounterStore(state => state.increment);
   const decrement = useCounterStore(state => state.decrement);
   const reset = useCounterStore(state => state.reset);
 
   return (
-    <View
-      style={[
-        styles.container,
-        { backgroundColor: colors.background, padding: spacing.lg },
-      ]}
-    >
-      <Text style={[styles.title, { color: colors.text }]}>Home</Text>
-      <Text style={[styles.count, { color: colors.text }]}>{count}</Text>
+    <Screen centered>
+      <Typography variant="title">Home</Typography>
+      <Typography variant="display">{count}</Typography>
 
-      <View style={[styles.row, { gap: spacing.sm }]}>
+      <View style={[styles.row, { gap: theme.spacing.sm }]}>
         <Button
           label="-"
           variant="secondary"
@@ -36,27 +33,10 @@ export const TimerScreen = () => {
         />
         <Button label="+" onPress={increment} testID="btn-inc" />
       </View>
-    </View>
+    </Screen>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: '700',
-    marginBottom: 16,
-  },
-  count: {
-    fontSize: 64,
-    fontWeight: '300',
-    marginBottom: 32,
-  },
-  row: {
-    flexDirection: 'row',
-  },
+  row: { flexDirection: 'row' },
 });

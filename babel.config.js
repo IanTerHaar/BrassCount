@@ -22,7 +22,7 @@ module.exports = {
           '@store': './src/store',
           '@hooks': './src/hooks',
           '@utils': './src/utils',
-          '@theme': './src/theme',
+          '@constants': './src/constants',
           '@types': './src/types',
           '@api': './src/api',
           '@assets': './src/assets',
