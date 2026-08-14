@@ -26,10 +26,7 @@ const palette = {
 
 export type Palette = typeof palette;
 
-// ---------------------------------------------------------------------------
 // Spacing & radius — proportional scales. Screens/components MUST use these.
-// ---------------------------------------------------------------------------
-
 export const spacing = {
   none: 0,
   xs: 4,
@@ -51,11 +48,8 @@ export const radius = {
 export type Spacing = typeof spacing;
 export type Radius = typeof radius;
 
-// ---------------------------------------------------------------------------
 // Typography — variants bundle size + weight + lineHeight so callers pick a
 // role ("title") instead of hand-mixing size/weight everywhere.
-// ---------------------------------------------------------------------------
-
 type FontWeight = TextStyle['fontWeight'];
 
 export const fontWeights = {
@@ -88,12 +82,9 @@ export const typography = {
 export type Typography = typeof typography;
 export type TypographyVariant = keyof Typography;
 
-// ---------------------------------------------------------------------------
 // Semantic colors — every screen/component references these role names, never
 // the palette. Both themes MUST have the same shape (SemanticColors) so
 // adding a token forces you to define it for both modes.
-// ---------------------------------------------------------------------------
-
 export type SemanticColors = {
   background: string;
   surface: string;
@@ -127,11 +118,8 @@ const darkColors: SemanticColors = {
   primaryMuted: palette.brass500,
 };
 
-// ---------------------------------------------------------------------------
 // Theme objects — one shape, two instances. Consumers get everything from
 // `useTheme()`; no need to know whether the app is in light or dark mode.
-// ---------------------------------------------------------------------------
-
 export type ThemeMode = 'light' | 'dark';
 
 export type Theme = {
