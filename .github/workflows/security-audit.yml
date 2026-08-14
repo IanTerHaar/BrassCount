@@ -4,12 +4,6 @@ on:
   schedule:
     - cron: '0 4 * * 1'
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - 'package.json'
-      - 'package-lock.json'
-      - '.github/workflows/security-audit.yml'
 
 permissions:
   contents: read
