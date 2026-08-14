@@ -18,5 +18,6 @@ jobs:
         with:
           app-id: ${{ secrets.BOT_APP_ID }}
           app-private-key: ${{ secrets.BOT_PRIVATE_KEY }}
+          files: package.json,package-lock.json,VERSION.txt
           create-tag: true
           tag-prefix: 'v'
