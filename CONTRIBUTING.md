@@ -19,7 +19,8 @@ Thank you for taking the time to contribute! This guide explains the workflow, c
 ## Getting Started
 
 1. **Fork** the repository and clone your fork locally.
-2. Install dependencies:
+2. Make sure you're running **Node.js 22** (the version pinned in every CI workflow and required by the `engines` field in `package.json`).
+3. Install dependencies:
 
    ```bash
    npm install
@@ -27,9 +28,9 @@ Thank you for taking the time to contribute! This guide explains the workflow, c
 
    > Husky hooks are installed automatically via the `prepare` script.
 
-3. Create a feature branch (see [Branch Naming](#branch-naming) below).
-4. Make your changes, commit them, and push to your fork.
-5. Open a Pull Request against `main`.
+4. Create a feature branch (see [Branch Naming](#branch-naming) below).
+5. Make your changes, commit them, and push to your fork.
+6. Open a Pull Request against `main`.
 
 ---
 
@@ -189,7 +190,7 @@ When you open a PR you'll see a template — please fill it in:
 
 ### Drafts
 
-Mark a PR as **Draft** if it isn't ready for review. The CI jobs that run lint, format, type-check, tests, and PR title validation are all skipped for draft PRs, so you can push works-in-progress without burning CI minutes.
+Mark a PR as **Draft** if it isn't ready for review. The lint, format, type-check, tests, and PR title validation jobs are all skipped for draft PRs, so you can push works-in-progress without burning most CI minutes. Note that the **Android build** job still runs on draft PRs — convert to draft _before_ pushing large WIP branches if you want to avoid the Gradle build.
 
 ---
 
@@ -197,12 +198,20 @@ Mark a PR as **Draft** if it isn't ready for review. The CI jobs that run lint, 
 
 All of the following jobs run automatically on every non-draft PR targeting `main`:
 
-| Job                       | Command                | Description                   |
-| ------------------------- | ---------------------- | ----------------------------- |
-| **Lint**                  | `npm run lint`         | ESLint with zero warnings     |
-| **Format check**          | `npm run format:check` | Prettier formatting           |
-| **Type check**            | `npm run typecheck`    | TypeScript (`tsc --noEmit`)   |
-| **Tests**                 | `npm run test:ci`      | Jest with coverage            |
-| **Conventional PR title** | —                      | Validates the PR title format |
+| Job                       | Command                           | Description                             |
+| ------------------------- | --------------------------------- | --------------------------------------- |
+| **Lint**                  | `npm run lint`                    | ESLint with zero warnings               |
+| **Format check**          | `npm run format:check`            | Prettier formatting                     |
+| **Type check**            | `npm run typecheck`               | TypeScript (`tsc --noEmit`)             |
+| **Tests**                 | `npm run test:ci`                 | Jest with coverage                      |
+| **Conventional PR title** | —                                 | Validates the PR title format           |
+| **Android build**         | `./gradlew assembleDebug` (arm64) | Builds a debug APK (runs on drafts too) |
 
 All checks must pass before a PR can be merged. If a check fails, click the **Details** link on GitHub to see the full output.
+
+In addition to the per-PR checks, the repository runs a few other automated workflows you may notice:
+
+- **Autolabeler** — labels every PR based on the "Type of Change" checkboxes in the PR template.
+- **Security audit** — `npm audit` runs weekly and whenever `package.json` / `package-lock.json` change on `main`.
+- **Version bump** — after merge to `main`, an automated version bump and tag are created based on the conventional commit types.
+- **Stale bot** — issues without activity for 30 days and PRs without activity for 21 days are marked stale; keep the conversation active or apply the `pinned` / `WIP` / `in-progress` label to exempt.
