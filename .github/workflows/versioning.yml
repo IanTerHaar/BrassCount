@@ -20,5 +20,3 @@ jobs:
           app-private-key: ${{ secrets.BOT_PRIVATE_KEY }}
           create-tag: true
           tag-prefix: 'v'
-          tag-patches: false
-          prune-tags: true
