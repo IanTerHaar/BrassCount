@@ -3,6 +3,19 @@ apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
 
 /**
+ * Read the app version from the repo-root version.txt so that the
+ * auto-version-bump action keeps Android in sync with package.json.
+ * versionCode is derived from versionName (major*10000 + minor*100 + patch)
+ * to stay monotonically increasing across bumps.
+ */
+def versionFile = rootProject.file('../version.txt')
+def appVersionName = versionFile.exists() ? versionFile.text.trim() : '1.0.0'
+def (vMajor, vMinor, vPatch) = (appVersionName.tokenize('.') + ['0', '0', '0'])
+    .take(3)
+    .collect { it.toInteger() }
+def appVersionCode = vMajor * 10000 + vMinor * 100 + vPatch
+
+/**
  * This is the configuration block to customize your React Native Android app.
  * By default you don't need to apply any configuration, just uncomment the lines you need.
  */
@@ -82,8 +95,8 @@ android {
         applicationId "com.brasscount.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode appVersionCode
+        versionName appVersionName
     }
     signingConfigs {
         debug {
