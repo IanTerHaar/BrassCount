@@ -1,7 +1,5 @@
 import { useMemo } from 'react';
-
 import { StyleSheet, useColorScheme } from 'react-native';
-
 import { darkTheme, lightTheme, type Theme } from '@constants/theme';
 
 /**

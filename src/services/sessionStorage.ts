@@ -1,5 +1,4 @@
 import type { Session, SessionInput } from '@/types/session';
-
 import { createStorageNamespace, StorageError } from './storage';
 
 /**

@@ -1,6 +1,5 @@
-import { useRoute, type RouteProp } from '@react-navigation/native';
-
 import type { RootStackParamList } from '@/types/navigation';
+import { useRoute, type RouteProp } from '@react-navigation/native';
 import { Screen } from '@components/Screen';
 import { Typography } from '@components/Typography';
 
