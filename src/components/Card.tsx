@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import type { Theme } from '@constants/theme';
+
 import {
   StyleSheet,
   TouchableOpacity,
@@ -7,6 +7,8 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
+
+import type { Theme } from '@constants/theme';
 import { useTheme, useThemedStyles } from '@hooks/useTheme';
 
 type CardProps = {

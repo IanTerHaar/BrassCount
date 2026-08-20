@@ -1,6 +1,8 @@
-import type { SemanticColors, Theme } from '@constants/theme';
 import { StyleSheet, TouchableOpacity, View } from 'react-native';
+
+import type { SemanticColors, Theme } from '@constants/theme';
 import { useTheme, useThemedStyles } from '@hooks/useTheme';
+
 import { Typography } from './Typography';
 
 type ChipTone = 'neutral' | 'primary' | 'success' | 'danger';

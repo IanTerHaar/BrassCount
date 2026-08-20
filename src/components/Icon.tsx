@@ -1,5 +1,6 @@
-import type { SemanticColors } from '@constants/theme';
 import { View, type ViewStyle } from 'react-native';
+
+import type { SemanticColors } from '@constants/theme';
 import { useTheme } from '@hooks/useTheme';
 
 export type IconName =

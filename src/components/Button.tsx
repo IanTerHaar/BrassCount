@@ -4,6 +4,7 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
+
 import { Typography } from '@components/Typography';
 import { useTheme } from '@hooks/useTheme';
 

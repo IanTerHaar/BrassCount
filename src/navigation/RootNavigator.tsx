@@ -1,6 +1,5 @@
-import type { RootStackParamList } from '@/types/navigation';
-import type { Theme } from '@constants/theme';
 import { useMemo } from 'react';
+
 import {
   DarkTheme,
   DefaultTheme,
@@ -8,8 +7,16 @@ import {
   type Theme as NavigationTheme,
 } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { DetailsScreen, ProfileScreen, SequenceEditorScreen } from '@/screens';
+
+import {
+  DetailsScreen,
+  HistoryDetailScreen,
+  SequenceEditorScreen,
+} from '@/screens';
+import type { RootStackParamList } from '@/types/navigation';
+import type { Theme } from '@constants/theme';
 import { useTheme } from '@hooks/useTheme';
+
 import { MainTabs } from './MainTabs';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -58,13 +65,13 @@ export const RootNavigator = () => {
           options={{ headerShown: false }}
         />
         <Stack.Screen
-          name="Profile"
-          component={ProfileScreen}
+          name="SequenceEditor"
+          component={SequenceEditorScreen}
           options={{ headerShown: false }}
         />
         <Stack.Screen
-          name="SequenceEditor"
-          component={SequenceEditorScreen}
+          name="HistoryDetail"
+          component={HistoryDetailScreen}
           options={{ headerShown: false }}
         />
         <Stack.Screen name="Details" component={DetailsScreen} />

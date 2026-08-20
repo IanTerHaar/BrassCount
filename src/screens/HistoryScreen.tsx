@@ -1,24 +1,37 @@
-import type { Theme } from '@constants/theme';
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
+
 import { StyleSheet, View } from 'react-native';
+
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+
+import type { RootStackParamList } from '@/types/navigation';
 import { Card } from '@components/Card';
-import { Chip } from '@components/Chip';
 import { EmptyState } from '@components/EmptyState';
+import { ListRow } from '@components/ListRow';
 import { Screen } from '@components/Screen';
 import { SectionHeader } from '@components/SectionHeader';
 import { Typography } from '@components/Typography';
-import { previewHistory } from '@constants/previewData';
+import { previewHistory, type SessionResult } from '@constants/previewData';
+import type { Theme } from '@constants/theme';
 import { useThemedStyles } from '@hooks/useTheme';
-import { formatDate, formatSeconds } from '@utils/format';
+import { formatSeconds, pluralize } from '@utils/format';
 
-type Filter = 'all' | 'best';
+type Nav = NativeStackNavigationProp<RootStackParamList>;
+
+/** Rolled-up view of every run logged against a single drill. */
+type DrillHistorySummary = {
+  drillName: string;
+  runs: number;
+  bestTime: number;
+  averageScore: number;
+  hasPersonalBest: boolean;
+  /** ISO-8601 of the most recent run, used to sort the list. */
+  lastRun: string;
+};
 
 const createStyles = (theme: Theme) =>
   StyleSheet.create({
-    filterRow: {
-      flexDirection: 'row',
-      gap: theme.spacing.sm,
-    },
     summaryRow: {
       flexDirection: 'row',
       gap: theme.spacing.md,
@@ -32,62 +45,50 @@ const createStyles = (theme: Theme) =>
       width: StyleSheet.hairlineWidth,
       backgroundColor: theme.colors.border,
     },
-    resultHeader: {
-      flexDirection: 'row',
-      alignItems: 'flex-start',
-      justifyContent: 'space-between',
-      gap: theme.spacing.sm,
-      marginBottom: theme.spacing.md,
-    },
-    resultTitle: { flex: 1, gap: 2 },
-    statRow: {
-      flexDirection: 'row',
-      gap: theme.spacing.md,
-    },
-    stat: {
-      flex: 1,
-      gap: theme.spacing.xs,
-      padding: theme.spacing.sm + theme.spacing.xs,
-      borderRadius: theme.radius.md,
-      backgroundColor: theme.colors.surfaceElevated,
-    },
-    scoreTrack: {
-      height: 4,
-      borderRadius: theme.radius.pill,
-      backgroundColor: theme.colors.border,
-      overflow: 'hidden',
-      marginTop: theme.spacing.xs,
-    },
-    scoreFill: {
-      height: '100%',
-      borderRadius: theme.radius.pill,
-      backgroundColor: theme.colors.primary,
-    },
-    list: { gap: theme.spacing.md },
   });
+
+/** Group history rows by drill so the tab lists drills, not raw runs. */
+const summarizeHistory = (history: SessionResult[]): DrillHistorySummary[] => {
+  const groups = new Map<string, SessionResult[]>();
+
+  for (const result of history) {
+    const existing = groups.get(result.drillName) ?? [];
+    existing.push(result);
+    groups.set(result.drillName, existing);
+  }
+
+  return Array.from(groups.entries())
+    .map(([drillName, runs]) => ({
+      drillName,
+      runs: runs.length,
+      bestTime: Math.min(...runs.map(run => run.timeSeconds)),
+      averageScore: Math.round(
+        runs.reduce((sum, run) => sum + run.score, 0) / runs.length,
+      ),
+      hasPersonalBest: runs.some(run => run.personalBest),
+      lastRun: runs.reduce(
+        (latest, run) => (run.completedAt > latest ? run.completedAt : latest),
+        runs[0].completedAt,
+      ),
+    }))
+    .sort((a, b) => (a.lastRun < b.lastRun ? 1 : -1));
+};
 
 export const HistoryScreen = () => {
   const styles = useThemedStyles(createStyles);
-  const [filter, setFilter] = useState<Filter>('all');
+  const navigation = useNavigation<Nav>();
 
-  const results = useMemo(
-    () =>
-      filter === 'best'
-        ? previewHistory.filter(item => item.personalBest)
-        : previewHistory,
-    [filter],
-  );
+  const drillSummaries = useMemo(() => summarizeHistory(previewHistory), []);
 
-  const bestTime = useMemo(
+  const bestOverall = useMemo(
     () =>
-      previewHistory.reduce(
-        (best, item) => Math.min(best, item.timeSeconds),
-        Number.POSITIVE_INFINITY,
-      ),
+      previewHistory.length === 0
+        ? null
+        : Math.min(...previewHistory.map(item => item.timeSeconds)),
     [],
   );
 
-  const averageScore = useMemo(
+  const averageOverall = useMemo(
     () =>
       previewHistory.length === 0
         ? 0
@@ -101,7 +102,7 @@ export const HistoryScreen = () => {
   return (
     <Screen
       title="History"
-      subtitle="Every run you have logged"
+      subtitle="Pick a drill to see previous runs"
       scrollable
       testID="screen-history"
     >
@@ -123,7 +124,7 @@ export const HistoryScreen = () => {
               BEST
             </Typography>
             <Typography variant="metric" color="primary">
-              {Number.isFinite(bestTime) ? formatSeconds(bestTime) : '—'}
+              {bestOverall !== null ? formatSeconds(bestOverall) : '—'}
             </Typography>
           </View>
 
@@ -133,84 +134,41 @@ export const HistoryScreen = () => {
             <Typography variant="overline" color="textSecondary">
               AVG SCORE
             </Typography>
-            <Typography variant="metric">{`${averageScore}%`}</Typography>
+            <Typography variant="metric">{`${averageOverall}%`}</Typography>
           </View>
         </View>
       </Card>
 
-      <View style={styles.filterRow}>
-        <Chip
-          label="All runs"
-          selected={filter === 'all'}
-          onPress={() => setFilter('all')}
-          testID="chip-filter-all"
-        />
-        <Chip
-          label="Personal bests"
-          selected={filter === 'best'}
-          onPress={() => setFilter('best')}
-          testID="chip-filter-best"
-        />
-      </View>
-
       <View>
-        <SectionHeader title={`Results · ${results.length}`} />
+        <SectionHeader title={`Drills · ${drillSummaries.length}`} />
 
-        {results.length === 0 ? (
+        {drillSummaries.length === 0 ? (
           <Card>
             <EmptyState
               icon="chart"
               title="Nothing here yet"
-              message="Run a drill from the timer and your results will show up here."
+              message="Run a drill from the timer and it will appear here."
             />
           </Card>
         ) : (
-          <View style={styles.list}>
-            {results.map(result => (
-              <Card key={result.id} testID={`card-result-${result.id}`}>
-                <View style={styles.resultHeader}>
-                  <View style={styles.resultTitle}>
-                    <Typography variant="subtitle" numberOfLines={1}>
-                      {result.drillName}
-                    </Typography>
-                    <Typography variant="caption" color="textTertiary">
-                      {formatDate(result.completedAt)}
-                    </Typography>
-                  </View>
-
-                  {result.personalBest ? (
-                    <Chip label="PB" tone="success" />
-                  ) : null}
-                </View>
-
-                <View style={styles.statRow}>
-                  <View style={styles.stat}>
-                    <Typography variant="overline" color="textSecondary">
-                      TIME
-                    </Typography>
-                    <Typography variant="metric">
-                      {formatSeconds(result.timeSeconds)}
-                    </Typography>
-                  </View>
-
-                  <View style={styles.stat}>
-                    <Typography variant="overline" color="textSecondary">
-                      SCORE
-                    </Typography>
-                    <Typography variant="metric">{`${result.score}%`}</Typography>
-                    <View style={styles.scoreTrack}>
-                      <View
-                        style={[
-                          styles.scoreFill,
-                          { width: `${result.score}%` },
-                        ]}
-                      />
-                    </View>
-                  </View>
-                </View>
-              </Card>
+          <Card flush>
+            {drillSummaries.map((summary, i) => (
+              <ListRow
+                key={summary.drillName}
+                title={summary.drillName}
+                subtitle={`${pluralize(summary.runs, 'run')} · Best ${formatSeconds(
+                  summary.bestTime,
+                )} · Avg ${summary.averageScore}%`}
+                onPress={() =>
+                  navigation.navigate('HistoryDetail', {
+                    drillName: summary.drillName,
+                  })
+                }
+                divided={i < drillSummaries.length - 1}
+                testID={`row-history-${summary.drillName}`}
+              />
             ))}
-          </View>
+          </Card>
         )}
       </View>
     </Screen>

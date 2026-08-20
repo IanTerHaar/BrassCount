@@ -1,6 +1,8 @@
-import type { Theme } from '@constants/theme';
 import { StyleSheet, TextInput, View } from 'react-native';
+
+import type { Theme } from '@constants/theme';
 import { useTheme, useThemedStyles } from '@hooks/useTheme';
+
 import { Typography } from './Typography';
 
 type TextFieldProps = {
@@ -10,6 +12,8 @@ type TextFieldProps = {
   placeholder?: string;
   /** Mono + numeric keypad, for dB and other calibration values. */
   numeric?: boolean;
+  /** Mono + decimal keypad, for par times and other fractional values. */
+  decimal?: boolean;
   /** Trailing unit shown inside the field, e.g. "dB". */
   unit?: string;
   editable?: boolean;
@@ -51,12 +55,20 @@ export const TextField = ({
   onChangeText,
   placeholder,
   numeric = false,
+  decimal = false,
   unit,
   editable = true,
   testID,
 }: TextFieldProps) => {
   const styles = useThemedStyles(createStyles);
   const theme = useTheme();
+
+  const keyboardType = decimal
+    ? 'decimal-pad'
+    : numeric
+      ? 'number-pad'
+      : 'default';
+  const monoInput = numeric || decimal;
 
   return (
     <View style={styles.group}>
@@ -74,9 +86,9 @@ export const TextField = ({
           placeholder={placeholder}
           placeholderTextColor={theme.colors.textTertiary}
           editable={editable}
-          keyboardType={numeric ? 'number-pad' : 'default'}
+          keyboardType={keyboardType}
           accessibilityLabel={label}
-          style={[styles.input, numeric && styles.numericInput]}
+          style={[styles.input, monoInput && styles.numericInput]}
         />
         {unit ? (
           <Typography variant="label" color="textTertiary">

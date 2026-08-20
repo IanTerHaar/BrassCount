@@ -1,6 +1,5 @@
-import type { Theme } from '@constants/theme';
 import { StyleSheet, View } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+
 import { Avatar } from '@components/Avatar';
 import { Card } from '@components/Card';
 import { ListRow } from '@components/ListRow';
@@ -8,11 +7,12 @@ import { Screen } from '@components/Screen';
 import { SectionHeader } from '@components/SectionHeader';
 import { Typography } from '@components/Typography';
 import {
+  previewDrills,
   previewGuns,
   previewHistory,
-  previewSequences,
   previewUser,
 } from '@constants/previewData';
+import type { Theme } from '@constants/theme';
 import { useThemedStyles } from '@hooks/useTheme';
 import { pluralize } from '@utils/format';
 
@@ -41,17 +41,11 @@ const createStyles = (theme: Theme) =>
 
 export const ProfileScreen = () => {
   const styles = useThemedStyles(createStyles);
-  const navigation = useNavigation();
 
   const guns = previewGuns.filter(gun => previewUser.gunIds.includes(gun.id));
 
   return (
-    <Screen
-      title="Profile"
-      onBack={navigation.goBack}
-      scrollable
-      testID="screen-profile"
-    >
+    <Screen title="Profile" scrollable testID="screen-profile">
       <Card>
         <View style={styles.identity}>
           <Avatar name={previewUser.name} size={84} />
@@ -74,10 +68,10 @@ export const ProfileScreen = () => {
 
             <View style={styles.stat}>
               <Typography variant="metric">
-                {String(previewSequences.length)}
+                {String(previewDrills.length)}
               </Typography>
               <Typography variant="overline" color="textSecondary">
-                SEQUENCES
+                DRILLS
               </Typography>
             </View>
 
@@ -123,8 +117,8 @@ export const ProfileScreen = () => {
             divided
           />
           <ListRow
-            title="Sequences"
-            value={pluralize(previewSequences.length, 'saved')}
+            title="Drills"
+            value={pluralize(previewDrills.length, 'saved')}
             divided
           />
           <ListRow title="Sign out" onPress={() => {}} />

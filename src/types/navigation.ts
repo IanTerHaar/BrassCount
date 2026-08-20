@@ -3,17 +3,18 @@ import type { NavigatorScreenParams } from '@react-navigation/native';
 export type RootStackParamList = {
   Tabs: NavigatorScreenParams<MainTabParamList>;
   Details: { id: string };
-  Profile: undefined;
   /** Omit `id` to build a new sequence. */
   SequenceEditor: { id?: string };
+  /** Runs recorded for a single drill. */
+  HistoryDetail: { drillName: string };
 };
 
 export type MainTabParamList = {
-  Social: undefined;
+  Calibration: undefined;
+  Drills: undefined;
   Timer: undefined;
-  Sequences: undefined;
   History: undefined;
-  Guns: undefined;
+  Profile: undefined;
 };
 
 declare global {

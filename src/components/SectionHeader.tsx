@@ -1,6 +1,8 @@
-import type { Theme } from '@constants/theme';
 import { StyleSheet, TouchableOpacity, View } from 'react-native';
+
+import type { Theme } from '@constants/theme';
 import { useThemedStyles } from '@hooks/useTheme';
+
 import { Typography } from './Typography';
 
 type SectionHeaderProps = {

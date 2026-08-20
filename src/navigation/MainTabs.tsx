@@ -1,12 +1,14 @@
-import type { MainTabParamList } from '@/types/navigation';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+
 import {
-  GunsScreen,
+  CalibrationScreen,
+  DrillsScreen,
   HistoryScreen,
-  SequencesScreen,
-  SocialScreen,
+  ProfileScreen,
   TimerScreen,
 } from '@/screens';
+import type { MainTabParamList } from '@/types/navigation';
+
 import { TabBar } from './TabBar';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
@@ -15,23 +17,23 @@ const Tab = createBottomTabNavigator<MainTabParamList>();
  * Screens render their own headers via the `Screen` shell, so the navigator
  * header stays off and the custom `TabBar` owns the bottom chrome.
  *
- * `Timer` is a real tab route so navigating to it keeps the bottom bar
- * mounted, but the `TabBar` hides it from the tab strip — the raised
- * centre button is its entry point.
+ * Tabs are declared in visual left-to-right order. `initialRouteName` keeps
+ * Timer as the landing screen even though it sits in the middle of the row.
  */
 export const MainTabs = () => (
   <Tab.Navigator
+    initialRouteName="Timer"
     tabBar={props => <TabBar {...props} />}
     screenOptions={{ headerShown: false }}
   >
     <Tab.Screen
-      name="Social"
-      component={SocialScreen}
-      options={{ title: 'Social' }}
+      name="Calibration"
+      component={CalibrationScreen}
+      options={{ title: 'Calibrate' }}
     />
     <Tab.Screen
-      name="Sequences"
-      component={SequencesScreen}
+      name="Drills"
+      component={DrillsScreen}
       options={{ title: 'Drills' }}
     />
     <Tab.Screen
@@ -45,9 +47,9 @@ export const MainTabs = () => (
       options={{ title: 'History' }}
     />
     <Tab.Screen
-      name="Guns"
-      component={GunsScreen}
-      options={{ title: 'Guns' }}
+      name="Profile"
+      component={ProfileScreen}
+      options={{ title: 'Profile' }}
     />
   </Tab.Navigator>
 );

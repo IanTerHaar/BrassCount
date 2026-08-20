@@ -1,6 +1,8 @@
-import type { Theme } from '@constants/theme';
 import { StyleSheet, View } from 'react-native';
+
+import type { Theme } from '@constants/theme';
 import { useThemedStyles } from '@hooks/useTheme';
+
 import { Button } from './Button';
 import { Icon, type IconName } from './Icon';
 import { Typography } from './Typography';

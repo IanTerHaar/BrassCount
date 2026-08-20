@@ -1,21 +1,17 @@
-import type { Theme } from '@constants/theme';
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import type { RootStackParamList } from '@/types/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
+
 import { StyleSheet, TouchableOpacity, View } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
-import { Avatar } from '@components/Avatar';
+
 import { Card } from '@components/Card';
 import { Chip } from '@components/Chip';
 import { Icon } from '@components/Icon';
 import { Screen } from '@components/Screen';
 import { SectionHeader } from '@components/SectionHeader';
 import { Typography } from '@components/Typography';
-import { previewDrills, previewUser } from '@constants/previewData';
+import { previewDrills } from '@constants/previewData';
+import type { Theme } from '@constants/theme';
 import { useTheme, useThemedStyles } from '@hooks/useTheme';
 import { formatElapsed, formatSeconds } from '@utils/format';
-
-type Nav = NativeStackNavigationProp<RootStackParamList>;
 
 /** Per-shot times the audio detector will emit once it is wired up. */
 const previewSplits = [1.24, 0.31, 0.28, 0.35, 0.29, 0.33];
@@ -88,7 +84,6 @@ const createStyles = (theme: Theme) =>
 export const TimerScreen = () => {
   const styles = useThemedStyles(createStyles);
   const theme = useTheme();
-  const navigation = useNavigation<Nav>();
 
   const [selectedDrillId, setSelectedDrillId] = useState(previewDrills[0].id);
   const [running, setRunning] = useState(false);
@@ -138,13 +133,6 @@ export const TimerScreen = () => {
     <Screen
       title="Shot Timer"
       subtitle={running ? 'Listening…' : 'Ready when you are'}
-      headerRight={
-        <Avatar
-          name={previewUser.name}
-          onPress={() => navigation.navigate('Profile')}
-          testID="btn-profile"
-        />
-      }
       scrollable
       testID="screen-timer"
     >

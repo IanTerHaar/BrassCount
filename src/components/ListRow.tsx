@@ -1,7 +1,10 @@
 import type { ReactNode } from 'react';
-import type { Theme } from '@constants/theme';
+
 import { StyleSheet, TouchableOpacity, View } from 'react-native';
+
+import type { Theme } from '@constants/theme';
 import { useThemedStyles } from '@hooks/useTheme';
+
 import { Icon } from './Icon';
 import { Typography } from './Typography';
 

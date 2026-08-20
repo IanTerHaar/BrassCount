@@ -14,13 +14,27 @@ export type DrillSummary = {
   shots: number;
   /** Par time in seconds, if the drill is timed. */
   parSeconds?: number;
+  /** Ordered actions the detector listens for during a run. */
+  steps: DrillStep[];
+};
+
+/**
+ * One action in a drill.
+ *
+ * `parSeconds` is a *step* par: the maximum time the shooter is allowed
+ * between the previous action (or timer start, for the first step) and
+ * this one. Optional — leave it off when the step is untimed.
+ */
+export type DrillStep = {
+  action: SequenceAction;
+  parSeconds?: number;
 };
 
 /**
  * A single event in a sequence — what the detector listens for, in order.
  *
- * `shot`, `reload` and `rack` map onto the dB thresholds calibrated per
- * firearm on the Guns screen; `draw` and `holster` bookend a string.
+ * `shot`, `reload` and `rack` map onto the calibrated dB thresholds set on
+ * the Calibration screen; `draw` and `holster` bookend a string.
  */
 export type SequenceAction =
   'draw' | 'shot' | 'reload' | 'rack' | 'transition' | 'holster';
@@ -45,12 +59,6 @@ export const sequenceActionOptions: {
 export const sequenceActionLabel = (action: SequenceAction): string =>
   sequenceActionOptions.find(option => option.value === action)?.label ??
   action;
-
-export type SequenceSummary = {
-  id: string;
-  name: string;
-  steps: SequenceAction[];
-};
 
 export type SessionResult = {
   id: string;
@@ -83,28 +91,87 @@ export type UserProfile = {
 };
 
 export const previewDrills: DrillSummary[] = [
-  { id: 'd1', name: 'Bill Drill', shots: 6, parSeconds: 2 },
-  { id: 'd2', name: 'El Presidente', shots: 12, parSeconds: 10 },
-  { id: 'd3', name: 'Failure to Stop', shots: 3, parSeconds: 3 },
-  { id: 'd4', name: 'Mozambique', shots: 3, parSeconds: 4 },
-  { id: 'd5', name: 'Dot Torture', shots: 50 },
-];
-
-export const previewSequences: SequenceSummary[] = [
   {
-    id: 's1',
-    name: 'Warm-up Set',
-    steps: ['draw', 'shot', 'shot', 'reload', 'shot'],
+    id: 'd1',
+    name: 'Bill Drill',
+    shots: 6,
+    parSeconds: 2,
+    steps: [
+      { action: 'draw', parSeconds: 1.5 },
+      { action: 'shot', parSeconds: 0.25 },
+      { action: 'shot', parSeconds: 0.2 },
+      { action: 'shot', parSeconds: 0.2 },
+      { action: 'shot', parSeconds: 0.2 },
+      { action: 'shot', parSeconds: 0.2 },
+      { action: 'shot', parSeconds: 0.2 },
+    ],
   },
   {
-    id: 's2',
-    name: 'Competition Prep',
-    steps: ['draw', 'shot', 'shot', 'transition', 'shot', 'reload', 'shot'],
+    id: 'd2',
+    name: 'El Presidente',
+    shots: 12,
+    parSeconds: 10,
+    steps: [
+      { action: 'draw', parSeconds: 1.5 },
+      { action: 'shot', parSeconds: 0.3 },
+      { action: 'shot', parSeconds: 0.3 },
+      { action: 'transition', parSeconds: 0.4 },
+      { action: 'shot', parSeconds: 0.3 },
+      { action: 'shot', parSeconds: 0.3 },
+      { action: 'transition', parSeconds: 0.4 },
+      { action: 'shot', parSeconds: 0.3 },
+      { action: 'shot', parSeconds: 0.3 },
+      { action: 'reload', parSeconds: 2 },
+      { action: 'shot', parSeconds: 0.3 },
+      { action: 'shot', parSeconds: 0.3 },
+      { action: 'transition', parSeconds: 0.4 },
+      { action: 'shot', parSeconds: 0.3 },
+      { action: 'shot', parSeconds: 0.3 },
+      { action: 'transition', parSeconds: 0.4 },
+      { action: 'shot', parSeconds: 0.3 },
+      { action: 'shot', parSeconds: 0.3 },
+    ],
   },
   {
-    id: 's3',
-    name: 'Malfunction Clear',
-    steps: ['draw', 'shot', 'rack', 'shot', 'holster'],
+    id: 'd3',
+    name: 'Failure to Stop',
+    shots: 3,
+    parSeconds: 3,
+    steps: [
+      { action: 'draw', parSeconds: 1.5 },
+      { action: 'shot', parSeconds: 0.25 },
+      { action: 'shot', parSeconds: 0.25 },
+      { action: 'shot', parSeconds: 0.5 },
+    ],
+  },
+  {
+    id: 'd4',
+    name: 'Mozambique',
+    shots: 3,
+    parSeconds: 4,
+    steps: [
+      { action: 'draw', parSeconds: 1.5 },
+      { action: 'shot', parSeconds: 0.25 },
+      { action: 'shot', parSeconds: 0.25 },
+      { action: 'shot', parSeconds: 0.5 },
+      { action: 'holster' },
+    ],
+  },
+  {
+    id: 'd5',
+    name: 'Dot Torture',
+    shots: 50,
+    steps: [
+      { action: 'draw', parSeconds: 1.5 },
+      { action: 'shot' },
+      { action: 'shot' },
+      { action: 'reload', parSeconds: 2 },
+      { action: 'shot' },
+      { action: 'shot' },
+      { action: 'rack' },
+      { action: 'shot' },
+      { action: 'holster' },
+    ],
   },
 ];
 

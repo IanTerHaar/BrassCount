@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import type { Theme } from '@constants/theme';
+
 import {
   ScrollView,
   StyleSheet,
@@ -8,8 +8,12 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
+
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+import type { Theme } from '@constants/theme';
 import { useThemedStyles } from '@hooks/useTheme';
+
 import { Icon } from './Icon';
 import { Typography } from './Typography';
 
