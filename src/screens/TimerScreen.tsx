@@ -8,7 +8,11 @@ import { Icon } from '@components/Icon';
 import { Screen } from '@components/Screen';
 import { SectionHeader } from '@components/SectionHeader';
 import { Typography } from '@components/Typography';
-import { previewDrills } from '@constants/previewData';
+import {
+  countShots,
+  previewDrills,
+  totalParSeconds,
+} from '@constants/previewData';
 import type { Theme } from '@constants/theme';
 import { useTheme, useThemedStyles } from '@hooks/useTheme';
 import { formatElapsed, formatSeconds } from '@utils/format';
@@ -124,8 +128,13 @@ export const TimerScreen = () => {
     startedAt.current = null;
   }, []);
 
-  const overPar =
-    drill.parSeconds !== undefined && elapsed > drill.parSeconds && elapsed > 0;
+  const overPar = (() => {
+    const par = totalParSeconds(drill.steps);
+    return par !== undefined && elapsed > par && elapsed > 0;
+  })();
+
+  const shotCount = countShots(drill.steps);
+  const drillPar = totalParSeconds(drill.steps);
 
   const timerColor = overPar ? 'danger' : running ? 'primary' : 'textPrimary';
 
@@ -154,11 +163,11 @@ export const TimerScreen = () => {
       <Card raised style={styles.readout} testID="card-readout">
         <View style={styles.metaRow}>
           <Typography variant="overline" color="textSecondary">
-            {`${drill.shots} SHOTS`}
+            {`${shotCount} SHOTS`}
           </Typography>
-          {drill.parSeconds !== undefined ? (
+          {drillPar !== undefined ? (
             <Typography variant="overline" color="textSecondary">
-              {`PAR ${drill.parSeconds.toFixed(2)}S`}
+              {`PAR ${drillPar.toFixed(2)}S`}
             </Typography>
           ) : null}
         </View>

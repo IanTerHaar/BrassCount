@@ -8,7 +8,6 @@ import { SectionHeader } from '@components/SectionHeader';
 import { Typography } from '@components/Typography';
 import {
   previewDrills,
-  previewGuns,
   previewHistory,
   previewUser,
 } from '@constants/previewData';
@@ -42,8 +41,6 @@ const createStyles = (theme: Theme) =>
 export const ProfileScreen = () => {
   const styles = useThemedStyles(createStyles);
 
-  const guns = previewGuns.filter(gun => previewUser.gunIds.includes(gun.id));
-
   return (
     <Screen title="Profile" scrollable testID="screen-profile">
       <Card>
@@ -74,38 +71,9 @@ export const ProfileScreen = () => {
                 DRILLS
               </Typography>
             </View>
-
-            <View style={styles.statDivider} />
-
-            <View style={styles.stat}>
-              <Typography variant="metric">{String(guns.length)}</Typography>
-              <Typography variant="overline" color="textSecondary">
-                FIREARMS
-              </Typography>
-            </View>
           </View>
         </View>
       </Card>
-
-      <View>
-        <SectionHeader
-          title="My firearms"
-          actionLabel="Manage"
-          onActionPress={() => {}}
-        />
-        <Card flush>
-          {guns.map((gun, i) => (
-            <ListRow
-              key={gun.id}
-              title={gun.name}
-              subtitle={`Shot threshold ${gun.calibration.shot} dB`}
-              onPress={() => {}}
-              divided={i < guns.length - 1}
-              testID={`row-gun-${gun.id}`}
-            />
-          ))}
-        </Card>
-      </View>
 
       <View>
         <SectionHeader title="Preferences" />
@@ -114,11 +82,6 @@ export const ProfileScreen = () => {
             title="Appearance"
             subtitle="Follows your device setting"
             onPress={() => {}}
-            divided
-          />
-          <ListRow
-            title="Drills"
-            value={pluralize(previewDrills.length, 'saved')}
             divided
           />
           <ListRow title="Sign out" onPress={() => {}} />

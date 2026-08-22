@@ -11,10 +11,10 @@ import { ListRow } from '@components/ListRow';
 import { Screen } from '@components/Screen';
 import { SectionHeader } from '@components/SectionHeader';
 import { Typography } from '@components/Typography';
-import { previewDrills } from '@constants/previewData';
+import { countShots, previewDrills } from '@constants/previewData';
 import type { Theme } from '@constants/theme';
 import { useThemedStyles } from '@hooks/useTheme';
-import { formatSeconds, pluralize } from '@utils/format';
+import { pluralize } from '@utils/format';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -45,12 +45,8 @@ export const DrillsScreen = () => {
   const styles = useThemedStyles(createStyles);
   const navigation = useNavigation<Nav>();
 
-  const describe = (drill: (typeof previewDrills)[number]) => {
-    const shots = pluralize(drill.shots, 'shot');
-    return drill.parSeconds !== undefined
-      ? `${shots} · Par ${formatSeconds(drill.parSeconds)}`
-      : shots;
-  };
+  const describe = (drill: (typeof previewDrills)[number]) =>
+    pluralize(countShots(drill.steps), 'shot');
 
   return (
     <Screen
@@ -68,7 +64,7 @@ export const DrillsScreen = () => {
           <Icon name="plus" size={22} color="primary" />
         </View>
         <View style={styles.createText}>
-          <Typography variant="bodyStrong">Create drill</Typography>
+          <Typography variant="bodyStrong">Create Drill</Typography>
           <Typography variant="caption" color="textTertiary">
             Name it, then chain the actions in order
           </Typography>

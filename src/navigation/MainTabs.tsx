@@ -3,12 +3,12 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import {
   CalibrationScreen,
   DrillsScreen,
-  HistoryScreen,
   ProfileScreen,
   TimerScreen,
 } from '@/screens';
 import type { MainTabParamList } from '@/types/navigation';
 
+import { HistoryStack } from './HistoryStack';
 import { TabBar } from './TabBar';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
@@ -43,7 +43,7 @@ export const MainTabs = () => (
     />
     <Tab.Screen
       name="History"
-      component={HistoryScreen}
+      component={HistoryStack}
       options={{ title: 'History' }}
     />
     <Tab.Screen

@@ -5,7 +5,7 @@ import { StyleSheet, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
-import type { RootStackParamList } from '@/types/navigation';
+import type { HistoryStackParamList } from '@/types/navigation';
 import { Card } from '@components/Card';
 import { EmptyState } from '@components/EmptyState';
 import { ListRow } from '@components/ListRow';
@@ -17,15 +17,14 @@ import type { Theme } from '@constants/theme';
 import { useThemedStyles } from '@hooks/useTheme';
 import { formatSeconds, pluralize } from '@utils/format';
 
-type Nav = NativeStackNavigationProp<RootStackParamList>;
+type Nav = NativeStackNavigationProp<HistoryStackParamList, 'HistoryList'>;
 
 /** Rolled-up view of every run logged against a single drill. */
 type DrillHistorySummary = {
+  drillId: string;
   drillName: string;
   runs: number;
   bestTime: number;
-  averageScore: number;
-  hasPersonalBest: boolean;
   /** ISO-8601 of the most recent run, used to sort the list. */
   lastRun: string;
 };
@@ -52,20 +51,17 @@ const summarizeHistory = (history: SessionResult[]): DrillHistorySummary[] => {
   const groups = new Map<string, SessionResult[]>();
 
   for (const result of history) {
-    const existing = groups.get(result.drillName) ?? [];
+    const existing = groups.get(result.drillId) ?? [];
     existing.push(result);
-    groups.set(result.drillName, existing);
+    groups.set(result.drillId, existing);
   }
 
-  return Array.from(groups.entries())
-    .map(([drillName, runs]) => ({
-      drillName,
+  return Array.from(groups.values())
+    .map(runs => ({
+      drillId: runs[0].drillId,
+      drillName: runs[0].drillName,
       runs: runs.length,
       bestTime: Math.min(...runs.map(run => run.timeSeconds)),
-      averageScore: Math.round(
-        runs.reduce((sum, run) => sum + run.score, 0) / runs.length,
-      ),
-      hasPersonalBest: runs.some(run => run.personalBest),
       lastRun: runs.reduce(
         (latest, run) => (run.completedAt > latest ? run.completedAt : latest),
         runs[0].completedAt,
@@ -74,30 +70,34 @@ const summarizeHistory = (history: SessionResult[]): DrillHistorySummary[] => {
     .sort((a, b) => (a.lastRun < b.lastRun ? 1 : -1));
 };
 
+/** Rough relative time — "today", "2d ago", "3w ago". */
+const timeAgo = (iso: string, now = new Date()): string => {
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) {
+    return '—';
+  }
+
+  const days = Math.floor((now.getTime() - then) / 86_400_000);
+  if (days <= 0) {
+    return 'today';
+  }
+  if (days === 1) {
+    return 'yesterday';
+  }
+  if (days < 7) {
+    return `${days}d ago`;
+  }
+  if (days < 30) {
+    return `${Math.floor(days / 7)}w ago`;
+  }
+  return `${Math.floor(days / 30)}mo ago`;
+};
+
 export const HistoryScreen = () => {
   const styles = useThemedStyles(createStyles);
   const navigation = useNavigation<Nav>();
 
   const drillSummaries = useMemo(() => summarizeHistory(previewHistory), []);
-
-  const bestOverall = useMemo(
-    () =>
-      previewHistory.length === 0
-        ? null
-        : Math.min(...previewHistory.map(item => item.timeSeconds)),
-    [],
-  );
-
-  const averageOverall = useMemo(
-    () =>
-      previewHistory.length === 0
-        ? 0
-        : Math.round(
-            previewHistory.reduce((sum, item) => sum + item.score, 0) /
-              previewHistory.length,
-          ),
-    [],
-  );
 
   return (
     <Screen
@@ -121,26 +121,17 @@ export const HistoryScreen = () => {
 
           <View style={styles.summaryCell}>
             <Typography variant="overline" color="textSecondary">
-              BEST
+              DRILLS
             </Typography>
             <Typography variant="metric" color="primary">
-              {bestOverall !== null ? formatSeconds(bestOverall) : '—'}
+              {String(drillSummaries.length)}
             </Typography>
-          </View>
-
-          <View style={styles.summaryDivider} />
-
-          <View style={styles.summaryCell}>
-            <Typography variant="overline" color="textSecondary">
-              AVG SCORE
-            </Typography>
-            <Typography variant="metric">{`${averageOverall}%`}</Typography>
           </View>
         </View>
       </Card>
 
       <View>
-        <SectionHeader title={`Drills · ${drillSummaries.length}`} />
+        <SectionHeader title="Drills" />
 
         {drillSummaries.length === 0 ? (
           <Card>
@@ -154,18 +145,19 @@ export const HistoryScreen = () => {
           <Card flush>
             {drillSummaries.map((summary, i) => (
               <ListRow
-                key={summary.drillName}
+                key={summary.drillId}
                 title={summary.drillName}
                 subtitle={`${pluralize(summary.runs, 'run')} · Best ${formatSeconds(
                   summary.bestTime,
-                )} · Avg ${summary.averageScore}%`}
+                )} · ${timeAgo(summary.lastRun)}`}
                 onPress={() =>
                   navigation.navigate('HistoryDetail', {
+                    drillId: summary.drillId,
                     drillName: summary.drillName,
                   })
                 }
                 divided={i < drillSummaries.length - 1}
-                testID={`row-history-${summary.drillName}`}
+                testID={`row-history-${summary.drillId}`}
               />
             ))}
           </Card>
