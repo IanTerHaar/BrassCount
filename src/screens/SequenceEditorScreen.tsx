@@ -27,8 +27,8 @@ import { Select } from '@components/Select';
 import { TextField } from '@components/TextField';
 import { Typography } from '@components/Typography';
 import {
+  labelForStep,
   previewDrills,
-  sequenceActionLabel,
   sequenceActionOptions,
   type DrillStep,
   type SequenceAction,
@@ -60,25 +60,6 @@ const PAR_PRESETS: {
   { seconds: 2.0, label: '2.00s', description: 'Reload' },
   { seconds: 3.0, label: '3.00s' },
 ];
-
-/**
- * Numbers repeated actions the way a shooter would call them — the second
- * `shot` in a string reads "Shot 2", not "Shot".
- */
-const labelForStep = (steps: DrillStep[], position: number): string => {
-  const action = steps[position].action;
-  const total = steps.filter(step => step.action === action).length;
-
-  if (total < 2) {
-    return sequenceActionLabel(action);
-  }
-
-  const ordinal = steps
-    .slice(0, position + 1)
-    .filter(step => step.action === action).length;
-
-  return `${sequenceActionLabel(action)} ${ordinal}`;
-};
 
 const createStyles = (theme: Theme) =>
   StyleSheet.create({

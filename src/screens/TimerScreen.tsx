@@ -5,23 +5,19 @@ import { StyleSheet, TouchableOpacity, View } from 'react-native';
 import { Card } from '@components/Card';
 import { Chip } from '@components/Chip';
 import { Icon } from '@components/Icon';
+import { ListRow } from '@components/ListRow';
 import { Screen } from '@components/Screen';
 import { SectionHeader } from '@components/SectionHeader';
 import { Typography } from '@components/Typography';
 import {
   countShots,
+  labelForStep,
   previewDrills,
   totalParSeconds,
 } from '@constants/previewData';
 import type { Theme } from '@constants/theme';
 import { useTheme, useThemedStyles } from '@hooks/useTheme';
 import { formatElapsed, formatSeconds } from '@utils/format';
-
-/** Per-shot times the audio detector will emit once it is wired up. */
-const previewSplits = [1.24, 0.31, 0.28, 0.35, 0.29, 0.33];
-
-const fastestSplit = Math.min(...previewSplits);
-const slowestSplit = Math.max(...previewSplits);
 
 const createStyles = (theme: Theme) =>
   StyleSheet.create({
@@ -60,28 +56,6 @@ const createStyles = (theme: Theme) =>
       paddingVertical: theme.spacing.sm,
       paddingHorizontal: theme.spacing.md,
       marginTop: theme.spacing.xs,
-    },
-    splitRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: theme.spacing.md,
-      paddingVertical: theme.spacing.sm + theme.spacing.xs,
-      paddingHorizontal: theme.spacing.md,
-    },
-    splitDivider: {
-      borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: theme.colors.border,
-    },
-    splitBarTrack: {
-      flex: 1,
-      height: 6,
-      borderRadius: theme.radius.pill,
-      backgroundColor: theme.colors.surfaceElevated,
-      overflow: 'hidden',
-    },
-    splitBarFill: {
-      height: '100%',
-      borderRadius: theme.radius.pill,
     },
   });
 
@@ -226,43 +200,21 @@ export const TimerScreen = () => {
       <View>
         <SectionHeader title="Splits" />
         <Card flush>
-          {previewSplits.map((split, i) => {
-            const isFastest = split === fastestSplit;
-            return (
-              <View
-                key={`split-${i}`}
-                style={[
-                  styles.splitRow,
-                  i < previewSplits.length - 1 && styles.splitDivider,
-                ]}
-              >
-                <Typography variant="label" color="textTertiary">
-                  {String(i + 1).padStart(2, '0')}
-                </Typography>
-
-                <View style={styles.splitBarTrack}>
-                  <View
-                    style={[
-                      styles.splitBarFill,
-                      {
-                        width: `${(split / slowestSplit) * 100}%`,
-                        backgroundColor: isFastest
-                          ? theme.colors.success
-                          : theme.colors.primary,
-                      },
-                    ]}
-                  />
-                </View>
-
-                <Typography
-                  variant="metricSmall"
-                  color={isFastest ? 'success' : 'textPrimary'}
-                >
-                  {formatSeconds(split)}
-                </Typography>
-              </View>
-            );
-          })}
+          {drill.steps.map((step, i) => (
+            <ListRow
+              key={`split-${drill.id}-${i}`}
+              index={i + 1}
+              title={labelForStep(drill.steps, i)}
+              subtitle={
+                step.parSeconds !== undefined
+                  ? `par ${formatSeconds(step.parSeconds)}`
+                  : undefined
+              }
+              value="—"
+              divided={i < drill.steps.length - 1}
+              testID={`row-split-${i}`}
+            />
+          ))}
         </Card>
       </View>
     </Screen>

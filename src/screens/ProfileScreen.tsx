@@ -13,7 +13,6 @@ import {
 } from '@constants/previewData';
 import type { Theme } from '@constants/theme';
 import { useThemedStyles } from '@hooks/useTheme';
-import { pluralize } from '@utils/format';
 
 const createStyles = (theme: Theme) =>
   StyleSheet.create({

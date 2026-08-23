@@ -74,6 +74,34 @@ export const sequenceActionLabel = (action: SequenceAction): string =>
   sequenceActionOptions.find(option => option.value === action)?.label ??
   action;
 
+/**
+ * Human-readable label for a step at `position` in a sequence.
+ *
+ * Numbers repeated actions the way a shooter would call them — the second
+ * `shot` in a string reads "Shot 2", not "Shot" — so a sequence with only
+ * one draw stays plain "Draw", while a six-shot string reads "Shot 1"
+ * through "Shot 6". Accepts any sequence of items keyed by `action`, so
+ * both drill definitions (`DrillStep`) and completed runs (`RunStep`) can
+ * feed it.
+ */
+export const labelForStep = (
+  steps: { action: SequenceAction }[],
+  position: number,
+): string => {
+  const action = steps[position].action;
+  const total = steps.filter(step => step.action === action).length;
+
+  if (total < 2) {
+    return sequenceActionLabel(action);
+  }
+
+  const ordinal = steps
+    .slice(0, position + 1)
+    .filter(step => step.action === action).length;
+
+  return `${sequenceActionLabel(action)} ${ordinal}`;
+};
+
 export type SessionResult = {
   id: string;
   /** Links back to the drill definition this run was made against. */

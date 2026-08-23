@@ -17,9 +17,8 @@ import { Screen } from '@components/Screen';
 import { SectionHeader } from '@components/SectionHeader';
 import { Typography } from '@components/Typography';
 import {
+  labelForStep,
   previewHistory,
-  sequenceActionLabel,
-  type RunStep,
   type SessionResult,
 } from '@constants/previewData';
 import type { SemanticColors, Theme } from '@constants/theme';
@@ -27,26 +26,6 @@ import { useThemedStyles } from '@hooks/useTheme';
 import { formatDate, formatSeconds, pluralize } from '@utils/format';
 
 type HistoryDetailRoute = RouteProp<HistoryStackParamList, 'HistoryDetail'>;
-
-/**
- * Numbers repeated actions the way a shooter would call them — the second
- * `shot` in a string reads "Shot 2", not "Shot". Kept local to this screen
- * to avoid coupling to the editor's copy of the same helper.
- */
-const labelForStep = (steps: RunStep[], position: number): string => {
-  const action = steps[position].action;
-  const total = steps.filter(step => step.action === action).length;
-
-  if (total < 2) {
-    return sequenceActionLabel(action);
-  }
-
-  const ordinal = steps
-    .slice(0, position + 1)
-    .filter(step => step.action === action).length;
-
-  return `${sequenceActionLabel(action)} ${ordinal}`;
-};
 
 /**
  * How a run's total time compares to the run *before* it (older). Positive
