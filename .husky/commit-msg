@@ -10,7 +10,7 @@ commit_msg=$(head -n 1 "$commit_msg_file")
 # - keyword: feat, fix, chore, docs, refactor, test, build, ci, perf, style, revert
 # - scope: optional, e.g. (auth)
 # - message: required, non-empty
-pattern="^(feat|fix|chore|docs|refactor|test|build|ci|perf|style|revert)(\([a-z0-9\-]+\))?: .+"
+pattern="^(feat|fix|add|chore|docs|refactor|test|build|ci|perf|style|revert)(\([a-z0-9\-]+\))?: .+"
 
 if ! echo "$commit_msg" | grep -qE "$pattern"; then
   echo ""
@@ -19,6 +19,7 @@ if ! echo "$commit_msg" | grep -qE "$pattern"; then
   echo "Allowed formats:"
   echo "  feat: add new feature"
   echo "  feat(scope): add new feature in a scope"
+  echo "  add: new functionality"
   echo "  fix: resolve a bug"
   echo "  fix(auth): fix login issue"
   echo "  chore: update dependencies"
