@@ -1,5 +1,4 @@
 export * from './CalibrationScreen';
-export * from './DetailsScreen';
 export * from './DrillsScreen';
 export * from './HistoryDetailScreen';
 export * from './HistoryScreen';

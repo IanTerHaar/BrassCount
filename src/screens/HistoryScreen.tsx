@@ -5,6 +5,7 @@ import { StyleSheet, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
+import type { Theme } from '@/theme/theme';
 import type { HistoryStackParamList } from '@/types/navigation';
 import { Card } from '@components/Card';
 import { EmptyState } from '@components/EmptyState';
@@ -13,7 +14,6 @@ import { Screen } from '@components/Screen';
 import { SectionHeader } from '@components/SectionHeader';
 import { Typography } from '@components/Typography';
 import { previewHistory, type SessionResult } from '@constants/previewData';
-import type { Theme } from '@constants/theme';
 import { useThemedStyles } from '@hooks/useTheme';
 import { formatSeconds, pluralize } from '@utils/format';
 

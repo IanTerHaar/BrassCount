@@ -1,5 +1,6 @@
 import { StyleSheet, View } from 'react-native';
 
+import type { Theme } from '@/theme/theme';
 import { Avatar } from '@components/Avatar';
 import { Card } from '@components/Card';
 import { ListRow } from '@components/ListRow';
@@ -11,7 +12,6 @@ import {
   previewHistory,
   previewUser,
 } from '@constants/previewData';
-import type { Theme } from '@constants/theme';
 import { useThemedStyles } from '@hooks/useTheme';
 
 const createStyles = (theme: Theme) =>

@@ -5,7 +5,7 @@ import {
   type TextStyle,
 } from 'react-native';
 
-import type { SemanticColors, TypographyVariant } from '@constants/theme';
+import type { SemanticColors, TypographyVariant } from '@/theme/theme';
 import { useTheme } from '@hooks/useTheme';
 
 type ColorKey = keyof SemanticColors;

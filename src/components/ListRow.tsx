@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 
 import { StyleSheet, TouchableOpacity, View } from 'react-native';
 
-import type { Theme } from '@constants/theme';
+import type { Theme } from '@/theme/theme';
 import { useThemedStyles } from '@hooks/useTheme';
 
 import { Icon } from './Icon';

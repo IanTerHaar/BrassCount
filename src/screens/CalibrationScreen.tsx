@@ -1,12 +1,12 @@
 import { StyleSheet, View } from 'react-native';
 
+import type { Theme } from '@/theme/theme';
 import { Button } from '@components/Button';
 import { Card } from '@components/Card';
 import { Chip } from '@components/Chip';
 import { Screen } from '@components/Screen';
 import { SectionHeader } from '@components/SectionHeader';
 import { Typography } from '@components/Typography';
-import type { Theme } from '@constants/theme';
 import { useThemedStyles } from '@hooks/useTheme';
 
 /** dB range the meters are drawn against. Below 60 dB nothing registers. */

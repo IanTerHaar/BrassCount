@@ -17,6 +17,7 @@ import {
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import type { Theme } from '@/theme/theme';
 import type { RootStackParamList } from '@/types/navigation';
 import { Button } from '@components/Button';
 import { Card } from '@components/Card';
@@ -33,7 +34,6 @@ import {
   type DrillStep,
   type SequenceAction,
 } from '@constants/previewData';
-import type { Theme } from '@constants/theme';
 import { useThemedStyles } from '@hooks/useTheme';
 import { formatSeconds, pluralize } from '@utils/format';
 

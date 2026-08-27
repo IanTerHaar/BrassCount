@@ -11,7 +11,7 @@ import {
 
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import type { Theme } from '@constants/theme';
+import type { Theme } from '@/theme/theme';
 import { useThemedStyles } from '@hooks/useTheme';
 
 import { Icon } from './Icon';

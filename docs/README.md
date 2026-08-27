@@ -1,7 +1,5 @@
 # BrassCount
 
-**Android-first** React Native + TypeScript boilerplate.
-
 [![Build (Android)](https://github.com/IanTerHaar/BrassCount/actions/workflows/build.yml/badge.svg)](https://github.com/IanTerHaar/BrassCount/actions/workflows/build.yml) [![Tests](https://github.com/IanTerHaar/BrassCount/actions/workflows/tests.yml/badge.svg)](https://github.com/IanTerHaar/BrassCount/actions/workflows/tests.yml) [![Lint & Type Check](https://github.com/IanTerHaar/BrassCount/actions/workflows/lint.yml/badge.svg)](https://github.com/IanTerHaar/BrassCount/actions/workflows/lint.yml) [![Security Audit](https://github.com/IanTerHaar/BrassCount/actions/workflows/security-audit.yml/badge.svg)](https://github.com/IanTerHaar/BrassCount/actions/workflows/security-audit.yml)
 
 ## Key scripts

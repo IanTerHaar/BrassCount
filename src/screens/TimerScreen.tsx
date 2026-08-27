@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { StyleSheet, TouchableOpacity, View } from 'react-native';
 
+import type { Theme } from '@/theme/theme';
 import { Card } from '@components/Card';
 import { Chip } from '@components/Chip';
 import { Icon } from '@components/Icon';
@@ -15,7 +16,6 @@ import {
   previewDrills,
   totalParSeconds,
 } from '@constants/previewData';
-import type { Theme } from '@constants/theme';
 import { useTheme, useThemedStyles } from '@hooks/useTheme';
 import { formatElapsed, formatSeconds } from '@utils/format';
 
