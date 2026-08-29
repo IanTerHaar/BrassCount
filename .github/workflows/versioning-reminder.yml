@@ -1,0 +1,52 @@
+name: Version Bump Reminder
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  check-version-tag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate app token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_PRIVATE_KEY }}
+
+      - name: Check PR title for version tag
+        id: check
+        run: |
+          TITLE="${{ github.event.pull_request.title }}"
+          if [[ "$TITLE" == *"#major"* ]]; then
+            echo "tag=major" >> "$GITHUB_OUTPUT"
+          elif [[ "$TITLE" == *"#minor"* ]]; then
+            echo "tag=minor" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=patch" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Post reminder if no explicit tag
+        if: steps.check.outputs.tag == 'patch'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: version-bump-reminder
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          message: |
+            ⚠️ **Version bump reminder**
+            This PR title doesn't include `#minor` or `#major`.
+            It will ship as a **patch** by default. Add one of those tags to the title if this change warrants a bigger bump.
+
+      - name: Confirm tag if present
+        if: steps.check.outputs.tag != 'patch'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: version-bump-reminder
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          message: |
+            ✅ This PR is tagged as a **${{ steps.check.outputs.tag }}** bump.
