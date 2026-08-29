@@ -17,7 +17,7 @@ module.exports = {
     '^@env$': '<rootDir>/__mocks__/@env.js',
   },
   transformIgnorePatterns: [
-    'node_modules/(?!(jest-)?@?react-native|@react-native-community|@react-navigation)',
+    'node_modules/(?!(jest-)?@?react-native|@react-native-community|@react-navigation|uuid)',
   ],
   collectCoverageFrom: [
     'src/**/*.{ts,tsx}',
