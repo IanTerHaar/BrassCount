@@ -1,6 +1,6 @@
 import { StyleSheet, TouchableOpacity, View } from 'react-native';
 
-import type { SemanticColors, Theme } from '@constants/theme';
+import type { SemanticColors, Theme } from '@/theme/theme';
 import { useTheme, useThemedStyles } from '@hooks/useTheme';
 
 import { Typography } from './Typography';

@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 
 import { StyleSheet, useColorScheme } from 'react-native';
 
-import { darkTheme, lightTheme, type Theme } from '@constants/theme';
+import { darkTheme, lightTheme, type Theme } from '@/theme/theme';
 
 /**
  * Resolves the active theme from the OS color scheme. Screens/components

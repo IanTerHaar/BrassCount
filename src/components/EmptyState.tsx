@@ -1,6 +1,6 @@
 import { StyleSheet, View } from 'react-native';
 
-import type { Theme } from '@constants/theme';
+import type { Theme } from '@/theme/theme';
 import { useThemedStyles } from '@hooks/useTheme';
 
 import { Button } from './Button';

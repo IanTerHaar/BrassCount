@@ -2,7 +2,8 @@ name: Build (Android)
 
 on:
   push:
-    branches: [main]
+    branches:
+      [main, feat*/*, fix*/*, chore*/*, refactor*/*, build*/*, test*/*, ci*/*]
   pull_request:
     branches: [main]
   schedule:

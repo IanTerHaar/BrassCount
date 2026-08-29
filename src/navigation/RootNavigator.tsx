@@ -8,9 +8,9 @@ import {
 } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
-import { DetailsScreen, SequenceEditorScreen } from '@/screens';
+import { SequenceEditorScreen } from '@/screens';
+import type { Theme } from '@/theme/theme';
 import type { RootStackParamList } from '@/types/navigation';
-import type { Theme } from '@constants/theme';
 import { useTheme } from '@hooks/useTheme';
 
 import { MainTabs } from './MainTabs';
@@ -65,7 +65,6 @@ export const RootNavigator = () => {
           component={SequenceEditorScreen}
           options={{ headerShown: false }}
         />
-        <Stack.Screen name="Details" component={DetailsScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );

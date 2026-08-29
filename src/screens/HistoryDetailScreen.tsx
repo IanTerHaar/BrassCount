@@ -8,6 +8,7 @@ import {
   type RouteProp,
 } from '@react-navigation/native';
 
+import type { SemanticColors, Theme } from '@/theme/theme';
 import type { HistoryStackParamList } from '@/types/navigation';
 import { Card } from '@components/Card';
 import { Chip } from '@components/Chip';
@@ -21,7 +22,6 @@ import {
   previewHistory,
   type SessionResult,
 } from '@constants/previewData';
-import type { SemanticColors, Theme } from '@constants/theme';
 import { useThemedStyles } from '@hooks/useTheme';
 import { formatDate, formatSeconds, pluralize } from '@utils/format';
 

@@ -1,6 +1,6 @@
 import { StyleSheet, TextInput, View } from 'react-native';
 
-import type { Theme } from '@constants/theme';
+import type { Theme } from '@/theme/theme';
 import { useTheme, useThemedStyles } from '@hooks/useTheme';
 
 import { Typography } from './Typography';

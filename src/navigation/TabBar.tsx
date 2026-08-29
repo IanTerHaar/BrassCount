@@ -3,10 +3,10 @@ import { StyleSheet, TouchableOpacity, View } from 'react-native';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import type { Theme } from '@/theme/theme';
 import type { MainTabParamList } from '@/types/navigation';
 import { Icon, type IconName } from '@components/Icon';
 import { Typography } from '@components/Typography';
-import type { Theme } from '@constants/theme';
 import { useTheme, useThemedStyles } from '@hooks/useTheme';
 
 const tabIcons: Record<keyof MainTabParamList, IconName> = {
