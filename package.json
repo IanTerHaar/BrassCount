@@ -2,6 +2,11 @@
   "name": "BrassCount",
   "version": "0.5.2",
   "private": true,
+  "codegenConfig": {
+    "name": "BrassCountSpecs",
+    "type": "modules",
+    "jsSrcsDir": "src/specs"
+  },
   "scripts": {
     "android": "react-native run-android",
     "android:release": "cd android && gradlew assembleRelease",
