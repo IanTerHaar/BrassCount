@@ -17,7 +17,13 @@ import {
   totalParSeconds,
 } from '@constants/previewData';
 import { useTheme, useThemedStyles } from '@hooks/useTheme';
+import {
+  StartSequenceAbortError,
+  StartSequenceService,
+} from '@services/startSequence';
 import { formatElapsed, formatSeconds } from '@utils/format';
+
+type Phase = 'idle' | 'waiting' | 'running';
 
 const createStyles = (theme: Theme) =>
   StyleSheet.create({
@@ -64,41 +70,89 @@ export const TimerScreen = () => {
   const theme = useTheme();
 
   const [selectedDrillId, setSelectedDrillId] = useState(previewDrills[0].id);
-  const [running, setRunning] = useState(false);
+  const [phase, setPhase] = useState<Phase>('idle');
   const [elapsed, setElapsed] = useState(0);
+  const [startError, setStartError] = useState<string | null>(null);
   const startedAt = useRef<number | null>(null);
-  // Mirrors `elapsed` so the effect can resume from a pause without taking
-  // the state value as a dependency (which would restart it every tick).
-  const elapsedRef = useRef(0);
+  const abortRef = useRef<AbortController | null>(null);
+  const runIdRef = useRef(0);
+
+  const running = phase === 'running';
+  const waiting = phase === 'waiting';
 
   const drill =
     previewDrills.find(item => item.id === selectedDrillId) ?? previewDrills[0];
 
-  // Derive the readout from wall-clock time instead of accumulating ticks,
-  // so a dropped frame cannot make the timer drift.
   useEffect(() => {
-    if (!running) {
+    StartSequenceService.prepare().catch(() => {
+      setStartError('Audio unavailable');
+    });
+
+    return () => {
+      abortRef.current?.abort();
+      StartSequenceService.release().catch(() => {});
+    };
+  }, []);
+
+  useEffect(() => {
+    const origin = startedAt.current;
+    if (phase !== 'running' || origin === null) {
       return;
     }
 
-    startedAt.current = Date.now() - elapsedRef.current * 1000;
     const id = setInterval(() => {
-      if (startedAt.current !== null) {
-        const next = (Date.now() - startedAt.current) / 1000;
-        elapsedRef.current = next;
-        setElapsed(next);
-      }
+      setElapsed((Date.now() - origin) / 1000);
     }, 50);
 
     return () => clearInterval(id);
-  }, [running]);
+  }, [phase]);
 
-  const toggle = useCallback(() => setRunning(prev => !prev), []);
+  const onPressStart = useCallback(async () => {
+    if (phase !== 'idle') {
+      runIdRef.current += 1;
+      abortRef.current?.abort();
+      abortRef.current = null;
+      startedAt.current = null;
+      setPhase('idle');
+      return;
+    }
+
+    const runId = ++runIdRef.current;
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    setStartError(null);
+    setElapsed(0);
+    startedAt.current = null;
+    setPhase('waiting');
+
+    try {
+      const result = await StartSequenceService.start({
+        signal: controller.signal,
+      });
+      if (runIdRef.current !== runId) {
+        return;
+      }
+      startedAt.current = result.startedAt;
+      setPhase('running');
+    } catch (err) {
+      if (runIdRef.current !== runId) {
+        return;
+      }
+      if (!(err instanceof StartSequenceAbortError)) {
+        setStartError('Could not play the start beep');
+      }
+      setPhase('idle');
+    }
+  }, [phase]);
 
   const reset = useCallback(() => {
-    setRunning(false);
+    runIdRef.current += 1;
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setPhase('idle');
     setElapsed(0);
-    elapsedRef.current = 0;
+    setStartError(null);
     startedAt.current = null;
   }, []);
 
@@ -115,7 +169,10 @@ export const TimerScreen = () => {
   return (
     <Screen
       title="Shot Timer"
-      subtitle={running ? 'Listening…' : 'Ready when you are'}
+      subtitle={
+        startError ??
+        (waiting ? 'Stand by…' : running ? 'Listening…' : 'Ready when you are')
+      }
       scrollable
       testID="screen-timer"
     >
@@ -160,28 +217,34 @@ export const TimerScreen = () => {
         </Typography>
 
         <TouchableOpacity
-          onPress={toggle}
+          onPress={onPressStart}
           accessibilityRole="button"
-          accessibilityLabel={running ? 'Stop timer' : 'Start timer'}
+          accessibilityLabel={
+            waiting ? 'Cancel start' : running ? 'Stop timer' : 'Start timer'
+          }
           activeOpacity={0.85}
           style={[
             styles.startButton,
             theme.elevation.raised,
             {
-              backgroundColor: running
-                ? theme.colors.danger
-                : theme.colors.primary,
+              backgroundColor: waiting
+                ? theme.colors.warning
+                : running
+                  ? theme.colors.danger
+                  : theme.colors.primary,
             },
           ]}
           testID="btn-start"
         >
-          {running ? (
+          {waiting ? (
+            <Icon name="timer" size={34} color="textOnPrimary" />
+          ) : running ? (
             <View style={styles.stopGlyph} />
           ) : (
             <Icon name="play" size={34} color="textOnPrimary" />
           )}
           <Typography variant="overline" color="textOnPrimary">
-            {running ? 'STOP' : 'START'}
+            {waiting ? 'WAIT' : running ? 'STOP' : 'START'}
           </Typography>
         </TouchableOpacity>
 
