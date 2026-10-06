@@ -158,6 +158,7 @@ export type SemanticColors = {
   /** De-emphasised meta: timestamps, row indices, units. */
   textTertiary: string;
   textOnPrimary: string;
+  textOnWarning: string;
   primary: string;
   primaryMuted: string;
   /** Tinted fill for chips/badges that carry `primary` text. */
@@ -179,6 +180,7 @@ const lightColors: SemanticColors = {
   textSecondary: palette.grey500,
   textTertiary: palette.grey400,
   textOnPrimary: palette.white,
+  textOnWarning: palette.grey900,
   primary: palette.brass400,
   primaryMuted: palette.brass700,
   primarySoft: palette.brassWash,
@@ -198,6 +200,7 @@ const darkColors: SemanticColors = {
   textSecondary: palette.grey400,
   textTertiary: palette.grey500,
   textOnPrimary: palette.grey950,
+  textOnWarning: palette.grey950,
   primary: palette.brass300,
   primaryMuted: palette.brass500,
   primarySoft: palette.brassWashDark,
