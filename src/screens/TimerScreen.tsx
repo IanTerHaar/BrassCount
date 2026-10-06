@@ -165,6 +165,7 @@ export const TimerScreen = () => {
   const drillPar = totalParSeconds(drill.steps);
 
   const timerColor = overPar ? 'danger' : running ? 'primary' : 'textPrimary';
+  const onButtonColor = waiting ? 'textOnWarning' : 'textOnPrimary';
 
   return (
     <Screen
@@ -237,13 +238,13 @@ export const TimerScreen = () => {
           testID="btn-start"
         >
           {waiting ? (
-            <Icon name="timer" size={34} color="textOnPrimary" />
+            <Icon name="timer" size={34} color={onButtonColor} />
           ) : running ? (
             <View style={styles.stopGlyph} />
           ) : (
             <Icon name="play" size={34} color="textOnPrimary" />
           )}
-          <Typography variant="overline" color="textOnPrimary">
+          <Typography variant="overline" color={onButtonColor}>
             {waiting ? 'WAIT' : running ? 'STOP' : 'START'}
           </Typography>
         </TouchableOpacity>

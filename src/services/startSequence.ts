@@ -6,7 +6,7 @@ import {
 } from './beepPlayer';
 
 export const DEFAULT_MIN_DELAY_MS = 1000;
-export const DEFAULT_MAX_DELAY_MS = 4000;
+export const DEFAULT_MAX_DELAY_MS = 5000;
 
 export class StartSequenceError extends Error {
   cause?: unknown;

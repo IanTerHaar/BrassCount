@@ -36,8 +36,12 @@ describe('startSequence', () => {
     await jest.advanceTimersByTimeAsync(DEFAULT_MIN_DELAY_MS - 1);
     expect(player.play).not.toHaveBeenCalled();
 
-    await jest.advanceTimersByTimeAsync(2500);
-    await expect(promise).resolves.toEqual({ startedAt: 2500, delayMs: 2500 });
+    const midpoint = (DEFAULT_MIN_DELAY_MS + DEFAULT_MAX_DELAY_MS) / 2;
+    await jest.advanceTimersByTimeAsync(midpoint);
+    await expect(promise).resolves.toEqual({
+      startedAt: midpoint,
+      delayMs: midpoint,
+    });
     expect(player.play).toHaveBeenCalledTimes(1);
   });
 

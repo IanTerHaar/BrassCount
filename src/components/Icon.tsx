@@ -58,10 +58,12 @@ export const Icon = ({ name, size = 24, color = 'textPrimary' }: IconProps) => {
     justifyContent: 'center',
   };
 
+  // Each glyph is keyed by `name` so swapping icons in place remounts the
+  // shapes — a reused native View keeps the previous glyph's per-edge borders.
   switch (name) {
     case 'timer':
       return (
-        <View style={box}>
+        <View key={name} style={box}>
           {/* dial */}
           <View style={[ring(size * 0.76, stroke), { top: size * 0.19 }]} />
           {/* crown */}
@@ -86,7 +88,7 @@ export const Icon = ({ name, size = 24, color = 'textPrimary' }: IconProps) => {
 
     case 'list':
       return (
-        <View style={box}>
+        <View key={name} style={box}>
           {[0.22, 0.47, 0.72].map(top => (
             <View
               key={top}
@@ -103,7 +105,7 @@ export const Icon = ({ name, size = 24, color = 'textPrimary' }: IconProps) => {
 
     case 'chart':
       return (
-        <View style={box}>
+        <View key={name} style={box}>
           {[
             { left: 0.12, height: 0.34 },
             { left: 0.41, height: 0.62 },
@@ -124,7 +126,7 @@ export const Icon = ({ name, size = 24, color = 'textPrimary' }: IconProps) => {
 
     case 'target':
       return (
-        <View style={box}>
+        <View key={name} style={box}>
           <View style={ring(size * 0.92, stroke)} />
           <View style={ring(size * 0.5, stroke)} />
           <View
@@ -141,7 +143,7 @@ export const Icon = ({ name, size = 24, color = 'textPrimary' }: IconProps) => {
 
     case 'user':
       return (
-        <View style={box}>
+        <View key={name} style={box}>
           <View style={[ring(size * 0.42, stroke), { top: size * 0.08 }]} />
           <View
             style={{
@@ -161,7 +163,7 @@ export const Icon = ({ name, size = 24, color = 'textPrimary' }: IconProps) => {
 
     case 'plus':
       return (
-        <View style={box}>
+        <View key={name} style={box}>
           <View style={bar({ width: size * 0.72, height: stroke })} />
           <View style={bar({ width: stroke, height: size * 0.72 })} />
         </View>
@@ -170,7 +172,7 @@ export const Icon = ({ name, size = 24, color = 'textPrimary' }: IconProps) => {
     case 'play':
       // Triangle via the classic transparent-border trick — no SVG needed.
       return (
-        <View style={box}>
+        <View key={name} style={box}>
           <View
             style={{
               width: 0,
@@ -189,7 +191,7 @@ export const Icon = ({ name, size = 24, color = 'textPrimary' }: IconProps) => {
 
     case 'chevron':
       return (
-        <View style={box}>
+        <View key={name} style={box}>
           <View
             style={{
               width: size * 0.42,
@@ -206,7 +208,7 @@ export const Icon = ({ name, size = 24, color = 'textPrimary' }: IconProps) => {
 
     case 'check':
       return (
-        <View style={box}>
+        <View key={name} style={box}>
           <View
             style={bar({
               left: size * 0.16,
@@ -230,7 +232,7 @@ export const Icon = ({ name, size = 24, color = 'textPrimary' }: IconProps) => {
 
     case 'pencil':
       return (
-        <View style={box}>
+        <View key={name} style={box}>
           <View
             style={bar({
               width: size * 0.68,
