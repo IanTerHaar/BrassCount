@@ -20,6 +20,23 @@ export const formatElapsed = (totalSeconds: number): string => {
 export const formatSeconds = (seconds: number): string =>
   `${seconds.toFixed(2)}s`;
 
+/** Level → `-12 dB`, rounded to a whole decibel; `—` when there is none. */
+export const formatDecibels = (decibels: number | null): string =>
+  // `+ 0` turns the -0 that rounding -0.4 gives into a plain 0.
+  decibels === null ? '—' : `${Math.round(decibels) + 0} dB`;
+
+/**
+ * The same level as a screen reader should say it: `minus 12 decibels`.
+ * A bare `-12 dB` is announced inconsistently, and `—` not at all.
+ */
+export const spokenDecibels = (decibels: number | null): string => {
+  if (decibels === null) {
+    return 'not set';
+  }
+  const rounded = Math.round(decibels) + 0;
+  return `${rounded < 0 ? 'minus ' : ''}${Math.abs(rounded)} decibels`;
+};
+
 /** ISO-8601 → `15 Aug 2026`. */
 export const formatDate = (iso: string): string => {
   const date = new Date(iso);

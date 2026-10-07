@@ -1,5 +1,5 @@
 /**
- * BrassCount – React Native + TypeScript boilerplate
+ * BrassCount – shot timer for shooting drills
  *
  * @format
  */
@@ -10,6 +10,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { RootNavigator } from '@navigation/RootNavigator';
+import { CalibrationProvider } from '@store/CalibrationContext';
 
 function App() {
   const isDarkMode = useColorScheme() === 'dark';
@@ -18,7 +19,10 @@ function App() {
     <GestureHandlerRootView style={styles.root}>
       <SafeAreaProvider>
         <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
-        <RootNavigator />
+        {/* Above the navigators, so calibration outlives any screen. */}
+        <CalibrationProvider>
+          <RootNavigator />
+        </CalibrationProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

@@ -1,55 +1,61 @@
+import { memo } from 'react';
+
 import { StyleSheet, View } from 'react-native';
 
 import type { Theme } from '@/theme/theme';
+import type { CalibrationSound, SoundCalibration } from '@/types/calibration';
 import { Button } from '@components/Button';
 import { Card } from '@components/Card';
 import { Chip } from '@components/Chip';
 import { Screen } from '@components/Screen';
 import { SectionHeader } from '@components/SectionHeader';
 import { Typography } from '@components/Typography';
+import { useCalibration } from '@hooks/useCalibration';
 import { useThemedStyles } from '@hooks/useTheme';
+import { formatDecibels, spokenDecibels } from '@utils/format';
 
-/** dB range the meters are drawn against. Below 60 dB nothing registers. */
-const DB_FLOOR = 60;
-const DB_CEILING = 110;
+/**
+ * dBFS range the meters are drawn against: full scale at the top, and a
+ * floor below which a sound is too quiet to be worth detecting.
+ */
+const DBFS_METER_FLOOR = -60;
+const DBFS_METER_CEILING = 0;
 
-type CalibrationKey = 'shot' | 'reload' | 'rack';
+/** Fixed width of the threshold readout, so the three meters line up. */
+const METER_VALUE_WIDTH = 62;
 
 /**
  * The sounds the audio detector needs a threshold for.
  *
  * Calibration is scoped to the current shooting session — the operator
  * dials each sound in against the ambient noise and gear on hand, so the
- * thresholds live on the session rather than the firearm. The
- * single-letter badge distinguishes reload (R) from rack (K).
+ * thresholds live on the session rather than the firearm (see
+ * `useCalibration`). The single-letter badge distinguishes reload (R)
+ * from rack (K).
  */
 const calibrationTypes: {
-  key: CalibrationKey;
+  key: CalibrationSound;
   badge: string;
   label: string;
   description: string;
-  threshold: number;
 }[] = [
   {
     key: 'shot',
     badge: 'S',
     label: 'Shot',
     description: 'A single round downrange',
-    threshold: 96,
   },
   {
     key: 'reload',
     badge: 'R',
     label: 'Reload',
     description: 'Magazine change',
-    threshold: 74,
   },
   {
     key: 'rack',
     badge: 'K',
     label: 'Rack',
     description: 'Cycle the slide',
-    threshold: 68,
   },
 ];
 
@@ -96,13 +102,13 @@ const createStyles = (theme: Theme) =>
       borderRadius: theme.radius.pill,
       backgroundColor: theme.colors.primary,
     },
-    meterValue: { width: 62, alignItems: 'flex-end' },
+    meterValue: { width: METER_VALUE_WIDTH, alignItems: 'flex-end' },
     scaleRow: {
       flexDirection: 'row',
       justifyContent: 'space-between',
       marginTop: theme.spacing.xs,
       marginBottom: theme.spacing.md,
-      paddingRight: 62 + theme.spacing.md,
+      paddingRight: METER_VALUE_WIDTH + theme.spacing.md,
     },
     actionRow: {
       flexDirection: 'row',
@@ -111,55 +117,98 @@ const createStyles = (theme: Theme) =>
     actionButton: { flex: 1 },
   });
 
-type CalibrationCardProps = {
-  type: (typeof calibrationTypes)[number];
+/**
+ * How far along the meter a threshold sits, from 0 to 1. A threshold
+ * quieter than the meter's floor is still valid; it just draws as an
+ * empty bar, with the value beside it carrying the real number.
+ */
+const meterRatio = (thresholdDbfs: number | null): number => {
+  if (thresholdDbfs === null) {
+    return 0;
+  }
+  const ratio =
+    (thresholdDbfs - DBFS_METER_FLOOR) /
+    (DBFS_METER_CEILING - DBFS_METER_FLOOR);
+  return Math.min(1, Math.max(0, ratio));
 };
 
-const CalibrationCard = ({ type }: CalibrationCardProps) => {
+type CalibrationCardProps = {
+  type: (typeof calibrationTypes)[number];
+  calibration: Readonly<SoundCalibration>;
+};
+
+/**
+ * Memoised so a card only re-renders when its own sound changes — the
+ * store keeps the other sounds' objects identical across an update.
+ */
+const CalibrationCard = memo(({ type, calibration }: CalibrationCardProps) => {
   const styles = useThemedStyles(createStyles);
 
-  const ratio = Math.min(
-    1,
-    Math.max(0, (type.threshold - DB_FLOOR) / (DB_CEILING - DB_FLOOR)),
-  );
+  const { thresholdDbfs, status } = calibration;
+  const statusLabel = status === 'calibrated' ? 'Calibrated' : 'Not calibrated';
 
   return (
     <Card testID={`card-calibration-${type.key}`}>
-      <View style={styles.cardHeader}>
-        <View style={styles.badge}>
-          <Typography variant="subtitle" color="primary">
-            {type.badge}
-          </Typography>
+      {/*
+       * One screen-reader stop for the whole readout, in place of the
+       * badge letter, the dash and the bar being announced piecemeal.
+       */}
+      <View
+        accessible
+        accessibilityLabel={`${type.label}, ${statusLabel.toLowerCase()}, threshold ${spokenDecibels(thresholdDbfs)}`}
+        testID={`summary-calibration-${type.key}`}
+      >
+        <View style={styles.cardHeader}>
+          <View style={styles.badge}>
+            <Typography variant="subtitle" color="primary">
+              {type.badge}
+            </Typography>
+          </View>
+
+          <View style={styles.headerText}>
+            <Typography variant="subtitle" numberOfLines={1}>
+              {type.label}
+            </Typography>
+            <Typography variant="caption" color="textTertiary">
+              {type.description}
+            </Typography>
+          </View>
+
+          <Chip
+            label={statusLabel}
+            tone={status === 'calibrated' ? 'success' : 'neutral'}
+            testID={`chip-calibration-${type.key}`}
+          />
         </View>
 
-        <View style={styles.headerText}>
-          <Typography variant="subtitle" numberOfLines={1}>
-            {type.label}
+        <View style={styles.meterRow}>
+          <View style={styles.meterTrack}>
+            <View
+              style={[
+                styles.meterFill,
+                { width: `${meterRatio(thresholdDbfs) * 100}%` },
+              ]}
+              testID={`meter-calibration-${type.key}`}
+            />
+          </View>
+          <View style={styles.meterValue}>
+            <Typography
+              variant="metricSmall"
+              testID={`text-threshold-${type.key}`}
+            >
+              {formatDecibels(thresholdDbfs)}
+            </Typography>
+          </View>
+        </View>
+
+        <View style={styles.scaleRow}>
+          <Typography variant="caption" color="textTertiary">
+            {`${DBFS_METER_FLOOR}`}
           </Typography>
           <Typography variant="caption" color="textTertiary">
-            {type.description}
+            {formatDecibels(DBFS_METER_CEILING)}
           </Typography>
         </View>
-
-        <Chip label="Calibrated" tone="success" />
-      </View>
-
-      <View style={styles.meterRow}>
-        <View style={styles.meterTrack}>
-          <View style={[styles.meterFill, { width: `${ratio * 100}%` }]} />
-        </View>
-        <View style={styles.meterValue}>
-          <Typography variant="metricSmall">{`${type.threshold} dB`}</Typography>
-        </View>
-      </View>
-
-      <View style={styles.scaleRow}>
-        <Typography variant="caption" color="textTertiary">
-          {`${DB_FLOOR}`}
-        </Typography>
-        <Typography variant="caption" color="textTertiary">
-          {`${DB_CEILING} dB`}
-        </Typography>
       </View>
 
       <View style={styles.actionRow}>
@@ -182,10 +231,11 @@ const CalibrationCard = ({ type }: CalibrationCardProps) => {
       </View>
     </Card>
   );
-};
+});
 
 export const CalibrationScreen = () => {
   const styles = useThemedStyles(createStyles);
+  const { state } = useCalibration();
 
   return (
     <Screen
@@ -208,7 +258,11 @@ export const CalibrationScreen = () => {
         <SectionHeader title={`Sounds · ${calibrationTypes.length}`} />
         <View style={styles.list}>
           {calibrationTypes.map(type => (
-            <CalibrationCard key={type.key} type={type} />
+            <CalibrationCard
+              key={type.key}
+              type={type}
+              calibration={state[type.key]}
+            />
           ))}
         </View>
       </View>
