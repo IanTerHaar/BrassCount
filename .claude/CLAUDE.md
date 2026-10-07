@@ -35,7 +35,11 @@ The screens are a finished front-end pass rendered from **fixtures**, not real d
 
 `src/services/` is being built up one service at a time and wired into screens as each lands. So far only `StartSequenceService` is consumed by a screen (`TimerScreen`); `SessionStorageService` exists and is tested but no screen reads from it yet. The `Session` type in `src/types/session.ts` is a generic placeholder shape and does not yet match the drill/run types in `previewData.ts`.
 
-There is no state-management library — screens use local `useState`/`useRef`. There is no `src/store/` or `src/api/` despite the aliases existing.
+There is no state-management library — screens use local `useState`/`useRef`. The one piece of shared state is calibration (see below). There is no `src/api/` despite the alias existing.
+
+### Calibration state (`src/store/`)
+
+Per-sound calibration (`shot`, `reload`, `rack`: threshold, status, last test reading) lives in a React Context: a pure reducer in `calibrationReducer.ts`, `CalibrationProvider` in `CalibrationContext.tsx` mounted in `App.tsx` above the navigators, read through `useCalibration()`. It is **deliberately in-memory only** and resets when the app is closed — do not persist it through `storage.ts`. Levels are dBFS, the unit `AmplitudeReading` reports, so a threshold compares directly with a live reading. Levels pass through `normalizeDbfs` before dispatch: anything below the -160 floor (silence reads as `-Infinity`) is raised to it, so a reading off the mic stream never throws, while `NaN` or a level above 0 throws `CalibrationError` as a caller bug. Keep the live microphone level out of this store; it changes many times a second.
 
 ### Services (`src/services/`)
 
@@ -98,4 +102,3 @@ Tests live in `__tests__/` at the repo root. `jest.setup.js` globally mocks Asyn
 - `.github/copilot-instructions.md` describes a Zustand store, `src/store/`, `src/api/`, a `counterStore` test and a `__mocks__/` directory — none of these exist. Don't treat it as a description of the current code.
 - `docs/CONTRIBUTING.md` shows branch names as `feat: short-description`; the real convention is the slash form above.
 - `react-native-dotenv` is configured (`import { X } from '@env'`), but nothing imports `@env` yet and the files its aliases point to (`__mocks__/@env.js` for Jest, `src/types/env.d.ts` for TypeScript) don't exist — create both when first using it.
-- `App.tsx`'s header comment still calls the project a boilerplate.

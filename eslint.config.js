@@ -12,7 +12,7 @@ module.exports = [
   },
   // TypeScript and JSX files (with project)
   {
-    files: ['src/**/*.{ts,tsx}', '__tests__/**/*.{ts,tsx}'],
+    files: ['App.tsx', 'src/**/*.{ts,tsx}', '__tests__/**/*.{ts,tsx}'],
     languageOptions: {
       parser: tsParser,
       parserOptions: {

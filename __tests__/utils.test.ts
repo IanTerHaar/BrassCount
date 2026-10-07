@@ -1,8 +1,10 @@
 import {
   formatDate,
+  formatDecibels,
   formatElapsed,
   formatSeconds,
   pluralize,
+  spokenDecibels,
 } from '@utils/format';
 import { generateId } from '@utils/id';
 import { getTimestamp } from '@utils/timestamp';
@@ -16,6 +18,20 @@ describe('format utilities', () => {
 
   it('formats seconds', () => {
     expect(formatSeconds(1.236)).toBe('1.24s');
+  });
+
+  it('formats a level in whole decibels, or a dash when there is none', () => {
+    expect(formatDecibels(-12.4)).toBe('-12 dB');
+    expect(formatDecibels(0)).toBe('0 dB');
+    expect(formatDecibels(-0.4)).toBe('0 dB');
+    expect(formatDecibels(null)).toBe('—');
+  });
+
+  it('words a level for a screen reader', () => {
+    expect(spokenDecibels(-12.4)).toBe('minus 12 decibels');
+    expect(spokenDecibels(0)).toBe('0 decibels');
+    expect(spokenDecibels(-0.4)).toBe('0 decibels');
+    expect(spokenDecibels(null)).toBe('not set');
   });
 
   it('formats dates and handles invalid input', () => {
