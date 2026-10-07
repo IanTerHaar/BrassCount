@@ -17,6 +17,7 @@ npm test                   # Jest (single run, not watch mode)
 npm test -- startSequence  # Single test file (path pattern)
 npm test -- -t "waits the random delay"   # Tests matching a name
 npm run test:ci            # Jest with coverage, as CI runs it
+npm run android:test       # Kotlin JVM unit tests (gradlew testDebugUnitTest)
 
 npm run typecheck          # tsc --noEmit
 npm run lint               # ESLint, --max-warnings=0
@@ -24,7 +25,7 @@ npm run format:check       # Prettier check (CI gate)
 npm run lint:format        # eslint --fix + prettier --write
 ```
 
-Before pushing, the PR gate is: `lint`, `format:check`, `typecheck`, `test:ci`, plus an Android `assembleDebug` build. CI copies `.env.example` to `.env` before the Gradle build.
+Before pushing, the PR gate is: `lint`, `format:check`, `typecheck`, `test:ci`, plus the Kotlin unit tests (`testDebugUnitTest`) and an Android `assembleDebug` build. CI copies `.env.example` to `.env` before the Gradle build.
 
 ## Architecture
 
@@ -80,7 +81,9 @@ ESLint 9 reads the flat config `eslint.config.js`, which pulls its `rules`, `set
 
 ### Tests
 
-Tests live in `__tests__/` at the repo root. `jest.setup.js` globally mocks AsyncStorage (official in-memory mock), `react-native-audio-api` (its `/mock`) and gesture-handler. Component tests use `react-test-renderer` with `act`, wrap in `SafeAreaProvider` with `initialMetrics`, and query by the `testID`s the screens expose (`btn-start`, `text-elapsed`, `tab-<Route>`, …). Timing-dependent tests use Jest fake timers with `jest.setSystemTime`.
+A behaviour change ships with unit tests in the same change: Jest for TypeScript / React Native, JVM unit tests for Kotlin under `android/`, and both when a native module's contract changes. See `.claude/rules/common/testing.md` and `.claude/rules/kotlin/testing.md` (Kotlin tests are plain JUnit 4 under `android/app/src/test/java/`, run with `testDebugUnitTest` locally and in CI; they cover the pure audio maths extracted from the native module, not its threading or lifecycle).
+
+Tests live in `__tests__/` at the repo root. `jest.setup.js` globally mocks AsyncStorage (official in-memory mock), `react-native-audio-api` (its `/mock`), the app-local `NativeAudioCapture` spec and gesture-handler. Component tests use `react-test-renderer` with `act`, wrap in `SafeAreaProvider` with `initialMetrics`, and query by the `testID`s the screens expose (`btn-start`, `text-elapsed`, `tab-<Route>`, …). Timing-dependent tests use Jest fake timers with `jest.setSystemTime`.
 
 ### Commits, branches, PRs, versioning
 

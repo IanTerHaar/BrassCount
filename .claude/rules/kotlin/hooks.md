@@ -15,6 +15,7 @@ No hook runs for Kotlin or Gradle files: the edit hook skips everything under `a
 
 | Check                        | Command                                                                        |
 | ---------------------------- | ------------------------------------------------------------------------------ |
+| Kotlin unit tests (CI runs)  | `cd android && gradlew testDebugUnitTest`                                      |
 | Compiles and runs            | `npm run android` (needs JDK 17, `JAVA_HOME`, and a device or emulator)        |
 | Compiles only (what CI runs) | `cd android && gradlew assembleDebug -PreactNativeArchitectures=arm64-v8a`     |
 | Stale build output           | `npm run android:clean`, then rebuild                                          |

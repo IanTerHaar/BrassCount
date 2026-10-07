@@ -7,7 +7,7 @@ paths:
 # Kotlin Coding Style
 
 > This file extends [common/coding-style.md](../common/coding-style.md) with Kotlin-specific content.
-> Kotlin in this repo is the Android host of a React Native app (`android/app/src/main/java/com/brasscount/app/`): today only `MainActivity.kt` and `MainApplication.kt`, plus any native modules added later. Application logic belongs in TypeScript; reach for Kotlin only when a platform API is not available from JS.
+> Kotlin in this repo is the Android host of a React Native app (`android/app/src/main/java/com/brasscount/app/`): the stock `MainActivity.kt` and `MainApplication.kt`, plus the audio capture native module under `audio/` (`AudioCaptureModule.kt` and its pure helpers `AudioLevels.kt` and `AudioSourcePreference.kt`). Application logic belongs in TypeScript; reach for Kotlin only when a platform API is not available from JS.
 
 ## Formatting
 

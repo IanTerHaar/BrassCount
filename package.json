@@ -2,11 +2,17 @@
   "name": "BrassCount",
   "version": "0.6.1",
   "private": true,
+  "codegenConfig": {
+    "name": "BrassCountSpecs",
+    "type": "modules",
+    "jsSrcsDir": "src/specs"
+  },
   "scripts": {
     "android": "react-native run-android",
     "android:release": "cd android && gradlew assembleRelease",
     "android:bundle": "cd android && gradlew bundleRelease",
     "android:clean": "cd android && gradlew clean",
+    "android:test": "cd android && .\\gradlew testDebugUnitTest",
     "start": "react-native start",
     "test": "jest",
     "test:ci": "jest --ci --coverage --reporters=default",

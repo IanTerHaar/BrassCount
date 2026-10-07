@@ -129,4 +129,7 @@ dependencies {
     } else {
         implementation jscFlavor
     }
+
+    // Local JVM unit tests (src/test), run with `gradlew testDebugUnitTest`
+    testImplementation("junit:junit:4.13.2")
 }
