@@ -1,0 +1,29 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/post-edit.js\"",
+            "timeout": 60,
+            "statusMessage": "Linting and formatting edited file"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/stop-typecheck.js\"",
+            "timeout": 180,
+            "statusMessage": "Type checking"
+          }
+        ]
+      }
+    ]
+  }
+}

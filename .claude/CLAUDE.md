@@ -2,84 +2,97 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Project
+## What this is
 
-BrassCount is an Android-first React Native + TypeScript app (React Native 0.86, React 19). No backend/API layer exists yet — all persistence is local via AsyncStorage.
+BrassCount is an Android-only React Native (0.86, React 19, TypeScript 6) shot-timer app for shooting drills: a randomised start beep, a running timer with per-step par times, drill/sequence editing, mic calibration, and run history. There is no `ios/` directory. Requires Node >= 22.11.
 
 ## Commands
 
 ```bash
-npm start                  # Metro bundler (run before `npm run android`)
-npm run android             # Build & run debug APK on device/emulator
-npm run android:release     # Build release APK
-npm run android:bundle      # Build release AAB (Play Store)
-npm run android:clean       # ./gradlew clean
+npm start                  # Metro bundler
+npm run android            # Build + run debug on device/emulator (needs JDK 17, JAVA_HOME)
+npm run android:release    # Release APK (android:bundle for AAB, android:clean to clean)
 
-npm test                    # Run all Jest tests
-npm test -- sessionStorage  # Run tests matching a file/pattern
-npm test -- --testNamePattern="saves a new session"
-npm run test:ci              # Jest with coverage, CI reporter
+npm test                   # Jest (single run, not watch mode)
+npm test -- startSequence  # Single test file (path pattern)
+npm test -- -t "waits the random delay"   # Tests matching a name
+npm run test:ci            # Jest with coverage, as CI runs it
 
-npm run typecheck            # tsc --noEmit
-npm run lint                  # ESLint, zero warnings allowed (--max-warnings=0)
-npm run lint:fix
-npm run format                # Prettier --write
-npm run format:check
-npm run lint:format            # lint:fix + format in one pass
+npm run typecheck          # tsc --noEmit
+npm run lint               # ESLint, --max-warnings=0
+npm run format:check       # Prettier check (CI gate)
+npm run lint:format        # eslint --fix + prettier --write
 ```
 
-Node.js 22+ is required (`engines` in package.json, pinned in CI). A JDK with `JAVA_HOME` set is required for Android builds.
-
-Tests live in `__tests__/` at the repo root (not colocated with `src/`), using the `.test.ts` extension.
+Before pushing, the PR gate is: `lint`, `format:check`, `typecheck`, `test:ci`, plus an Android `assembleDebug` build. CI copies `.env.example` to `.env` before the Gradle build.
 
 ## Architecture
 
-### Path aliases
+### Current state: UI is ahead of the data layer
 
-All internal imports use `@/...` style aliases, defined in three places that must stay in sync: `babel.config.js` (module-resolver plugin), `tsconfig.json` (`paths`), and `jest.config.js` (`moduleNameMapper`):
+The screens are a finished front-end pass rendered from **fixtures**, not real data. `src/constants/previewData.ts` holds both the display fixtures (`previewDrills`, `previewHistory`, `previewUser`) and, for now, the drill domain types and helpers (`DrillStep`, `SequenceAction`, `countShots`, `totalParSeconds`, `labelForStep`). Its header says to swap each `preview*` export for a real selector when the data layer lands, then delete the file.
 
-`@` → `src`, `@components`, `@screens`, `@navigation`, `@hooks`, `@utils`, `@constants`, `@types`, `@services`, `@theme`. (`@store`, `@api`, `@assets` are also aliased but have no corresponding directory yet — there is no state-management library or API client in this codebase.)
+`src/services/` is being built up one service at a time and wired into screens as each lands. So far only `StartSequenceService` is consumed by a screen (`TimerScreen`); `SessionStorageService` exists and is tested but no screen reads from it yet. The `Session` type in `src/types/session.ts` is a generic placeholder shape and does not yet match the drill/run types in `previewData.ts`.
 
-### Directory layout (`src/`)
+There is no state-management library — screens use local `useState`/`useRef`. There is no `src/store/` or `src/api/` despite the aliases existing.
 
-- `components/` — reusable UI primitives (Button, Card, TextField, Chip, ListRow, Typography, etc.), re-exported via `components/index.ts`
-- `screens/` — full-screen views: `CalibrationScreen`, `DrillsScreen`, `TimerScreen`, `HistoryScreen`, `HistoryDetailScreen`, `ProfileScreen`, `SequenceEditorScreen`
-- `navigation/` — `RootNavigator` (root stack), `MainTabs` (bottom tabs), `HistoryStack` (nested stack), `TabBar`
-- `hooks/` — `useTheme()` / `useThemedStyles()` are the only sanctioned way to read design tokens in components
-- `services/` — `storage.ts` (typed, namespaced AsyncStorage wrapper) and `sessionStorage.ts` (domain service built on top of it)
-- `theme/theme.ts` — palette, spacing, radius, typography, and semantic `SemanticColors` for light/dark; both theme objects must share the same `SemanticColors` shape
-- `types/` — `session.ts` (domain model), `navigation.ts` (`RootStackParamList`, `MainTabParamList`, `HistoryStackParamList`)
-- `constants/` — static values (e.g. `previewData.ts`)
+### Services (`src/services/`)
 
-### Navigation
+- **`storage.ts`** — the only module that may touch AsyncStorage. `createStorageNamespace<T>({ name, version })` returns typed CRUD scoped to keys of the form `@BrassCount:<name>:<version>:<id>`. All failures surface as `StorageError`; corrupt JSON reads resolve to `null` / are skipped rather than throwing. Bump `version` and write a migration for breaking shape changes.
+- **`sessionStorage.ts`** — domain service on top of a namespace. One key per session; stamps `createdAt`/`updatedAt` itself; `loadSessions()` returns newest-`updatedAt` first.
+- **`beepPlayer.ts`** — `BeepPlayer` interface (`prepare`/`play`/`release`) with an oscillator implementation over `react-native-audio-api`'s `AudioContext`.
+- **`startSequence.ts`** — waits a random delay (default 1000–4000 ms), plays the beep, resolves `{ startedAt, delayMs }`. `startedAt` is captured when the beep is triggered and is the timer's zero point. Cancellation is via `AbortSignal` and rejects with `StartSequenceAbortError` (distinct from `StartSequenceError`, which is a real failure).
 
-- `RootNavigator`: native-stack with `Tabs` (headerless, hosts `MainTabs`) and a modal-style `SequenceEditor` screen
-- `MainTabs`: bottom tabs — `Calibration`, `Drills`, `Timer`, `History` (nested stack), `Profile`
-- `HistoryStack`: `HistoryList` → `HistoryDetail`, kept as a nested stack specifically so the bottom tab bar stays visible when drilling into a run (a stack screen on the root stack would cover it)
-- Screen param types live in `src/types/navigation.ts`; extend `RootStackParamList`/`MainTabParamList`/`HistoryStackParamList` there, not inline in screens
+Service conventions to follow when adding one: export plain functions **and** an object-form `XxxService` handle plus `XxxServiceType`; throw a named `Error` subclass carrying `cause`; accept collaborators (`player`, `random`, `signal`) through an options object so tests inject fakes instead of mocking modules. Re-export from `src/services/index.ts`.
+
+### Navigation (`src/navigation/`)
+
+Root native stack → `Tabs` (bottom tabs: Calibration, Drills, **Timer** as initial route, History, Profile) + `SequenceEditor` pushed over the tabs. The History tab is itself a nested stack (`HistoryList` → `HistoryDetail`) so the tab bar stays visible on the detail screen. All param lists live in `src/types/navigation.ts`, which also augments `ReactNavigation.RootParamList` globally.
+
+Navigator headers are off everywhere: each screen renders its own header through the `Screen` component, and the bottom chrome is the custom `TabBar`. A new tab needs an entry in `tabIcons` in `TabBar.tsx`.
 
 ### Theming
 
-- `useTheme()` resolves `light`/`dark` from the OS color scheme (`useColorScheme`) — there is no manual override yet, but all token access is meant to go through this hook so one can be added in one place later
-- Components must reference semantic tokens (`theme.colors.textPrimary`, `theme.spacing.md`, ...), never the raw `palette` in `theme.ts`
-- `useThemedStyles(factory)` memoizes a themed `StyleSheet`; define the `factory` function at module scope so it doesn't get recreated (and thus recomputed) every render
-- `RootNavigator` maps the app theme onto React Navigation's `Theme` (`toNavigationTheme`) so header/card chrome matches instead of falling back to the library default
-- Timer/metric text uses the `timer`/`metric`/`metricSmall` typography variants, which force a monospace `fontFamily` — digit values must use these so numbers don't jitter horizontally as they tick
+`src/theme/theme.ts` defines a raw palette and semantic tokens (`colors`, `spacing`, `radius`, `typography`, `elevation`) for light and dark themes with an identical shape.
 
-### Persistence
+- Components never import the palette or theme objects directly (type-only `Theme` imports are fine). Get tokens from `useTheme()` so a manual theme override can later be added in one place.
+- Styles are written as a module-scope `createStyles = (theme: Theme) => StyleSheet.create({...})` and consumed with `useThemedStyles(createStyles)`. The factory must be module-scope (or memoised) or the memo is defeated.
+- Use spacing/radius tokens and `Typography` variants rather than literal numbers and ad hoc font sizes. Timer and metric readouts use the mono variants (`timer`, `metric`, `metricSmall`) so digits don't jitter.
+- Adding a semantic color means adding it to `SemanticColors` and both `lightColors` and `darkColors`.
 
-- `services/storage.ts` is the only module that talks to `@react-native-async-storage/async-storage` directly. It exposes `createStorageNamespace<T>({ name, version })`, giving each domain a versioned key prefix (`@BrassCount:<name>:<version>:<id>`) with typed `setItem`/`getItem`/`getAll`/`clear`, etc. Storage failures are normalized to `StorageError`.
-- Domain services (e.g. `sessionStorage.ts`) build on a namespace rather than importing AsyncStorage themselves. Bump a namespace's `version` (not the shape in place) when making a breaking change to a stored type, and write a migration that reads the old version.
-- `sessionStorage.ts` stamps `createdAt`/`updatedAt` itself — callers never set these manually — and `loadSessions()` returns results sorted by `updatedAt` descending.
-
-### Environment variables
-
-`react-native-dotenv` is wired up in `babel.config.js` (module name `@env`, reads `.env`) with a `.env.example` template, but no code currently imports from `@env` — this is scaffolding for future config, not an active pattern to follow yet.
+Screens are composed from the primitives in `src/components/` (`Screen`, `Card`, `ListRow`, `Chip`, `SectionHeader`, `Typography`, `Icon`, …). `Screen` owns safe area, padding, title/subtitle/back control, and bottom padding to clear the tab bar — pass `scrollable` for anything that can overflow.
 
 ## Conventions
 
-- **Commits/branches**: Conventional Commits, enforced by a Husky `commit-msg` hook — `<type>[(scope)]: <description>`, lowercase type, no trailing period. Valid types: `feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `build`, `ci`, `perf`, `style`, `revert`. Branch names follow the same `<type>: <kebab-case>` shape. PR titles are checked against the same format (soft check, non-blocking).
-- **Pre-commit**: Husky + lint-staged runs ESLint `--fix` then Prettier on staged `.ts/.tsx/.js/.jsx`, and Prettier on staged `.json/.md/.yml/.yaml`. A commit is aborted if ESLint can't auto-fix everything.
-- **Import order**: enforced by `eslint-plugin-import` — builtins, then external packages (React/React Native first), then internal `@/...` aliases, then parent/sibling/index — alphabetized within each group.
-- **Type-only imports**: use `import type { ... }`.
-- CI (`.github/workflows/`) runs lint, format check, typecheck, `test:ci`, and an Android debug build on every non-draft PR; all are skipped on draft PRs except the Android build.
+### Path aliases
+
+Aliases (`@/`, `@components/`, `@screens/`, `@navigation/`, `@hooks/`, `@utils/`, `@constants/`, `@types/`, `@services/`, `@store/`, `@api/`, `@assets/`) are declared in three places that must be kept in sync: `tsconfig.json`, `babel.config.js`, `jest.config.js`.
+
+Existing usage: `@/theme/theme`, `@/types/...` and `@/screens` go through `@/`; everything else uses the specific alias and imports the concrete file (`@components/Card`, `@hooks/useTheme`), not the barrel. Tests import with relative paths (`../src/...`).
+
+### Import order (lint-enforced, and warnings fail the build)
+
+`react` first, then `react-native`, then other external packages, then internal aliases, then relative — each group separated by a blank line and alphabetised within the group. `npm run lint:fix` sorts them.
+
+### ESLint config
+
+ESLint 9 reads the flat config `eslint.config.js`, which pulls its `rules`, `settings` and ignore list out of `.eslintrc.js`. Edit rules in `.eslintrc.js`; edit file globs/parser options in `eslint.config.js`. Root config files are ignored by ESLint (and filtered out in `.lintstagedrc.js`) — add any new root config file to both lists.
+
+### Tests
+
+Tests live in `__tests__/` at the repo root. `jest.setup.js` globally mocks AsyncStorage (official in-memory mock), `react-native-audio-api` (its `/mock`) and gesture-handler. Component tests use `react-test-renderer` with `act`, wrap in `SafeAreaProvider` with `initialMetrics`, and query by the `testID`s the screens expose (`btn-start`, `text-elapsed`, `tab-<Route>`, …). Timing-dependent tests use Jest fake timers with `jest.setSystemTime`.
+
+### Commits, branches, PRs, versioning
+
+- Commit subjects must match `<type>(optional-scope): <description>` — the husky `commit-msg` hook rejects anything else. Types: `feat`, `fix`, `add`, `chore`, `docs`, `refactor`, `test`, `build`, `ci`, `perf`, `style`, `revert`.
+- `pre-commit` runs lint-staged (`eslint --fix --max-warnings=0` + `prettier --write`) on staged files.
+- Branches are `<type>/<kebab-description>` (e.g. `feat/start-sequence-service`). The Tests and Android build workflows only trigger on pushes to `main` and branches matching `feat*/*`, `fix*/*`, `chore*/*`, `refactor*/*`, `build*/*`, `test*/*`, `ci*/*`.
+- PR titles use the same conventional format. Fill in the PR template's "Type of Change" checkboxes — the autolabeler reads them.
+- **Never hand-edit version numbers.** On merge to `main` a bot bumps `package.json`, `package-lock.json` and `VERSION.txt` and creates a `v*` tag. The bump is a patch unless the PR title contains `#minor` or `#major` (e.g. `feat(timer): add start beep #minor`).
+
+## Known stale spots
+
+- `.github/copilot-instructions.md` describes a Zustand store, `src/store/`, `src/api/`, a `counterStore` test and a `__mocks__/` directory — none of these exist. Don't treat it as a description of the current code.
+- `docs/CONTRIBUTING.md` shows branch names as `feat: short-description`; the real convention is the slash form above.
+- `react-native-dotenv` is configured (`import { X } from '@env'`), but nothing imports `@env` yet and the files its aliases point to (`__mocks__/@env.js` for Jest, `src/types/env.d.ts` for TypeScript) don't exist — create both when first using it.
+- `App.tsx`'s header comment still calls the project a boilerplate.
