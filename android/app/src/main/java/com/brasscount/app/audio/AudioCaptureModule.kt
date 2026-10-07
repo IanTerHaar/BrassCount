@@ -1,21 +1,24 @@
 package com.brasscount.app.audio
 
 import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
 import android.media.AudioFormat
+import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.os.Process
 import android.os.SystemClock
 import com.facebook.fbreact.specs.NativeAudioCaptureSpec
 import com.facebook.react.bridge.Arguments
+import com.facebook.react.bridge.LifecycleEventListener
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
+import com.facebook.react.bridge.WritableMap
+import com.facebook.react.common.LifecycleState
 import com.facebook.react.module.annotations.ReactModule
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
-import kotlin.math.log10
-import kotlin.math.sqrt
 
 /**
  * Low-level microphone capture service, bridged to JS as the `AudioCapture`
@@ -26,15 +29,25 @@ import kotlin.math.sqrt
  *
  * Runtime permission is requested from JS (`PermissionsAndroid`); this
  * module only checks the current grant state before opening the mic.
+ *
+ * Capture is foreground-only: it is stopped when the host activity pauses
+ * (JS is told through an `INTERRUPTED` error event) so the microphone is
+ * never left open behind the user's back. JS restarts it on resume.
  */
 @ReactModule(name = AudioCaptureModule.NAME)
 class AudioCaptureModule(private val reactContext: ReactApplicationContext) :
-  NativeAudioCaptureSpec(reactContext) {
+  NativeAudioCaptureSpec(reactContext), LifecycleEventListener {
 
   private val isRunning = AtomicBoolean(false)
   private val stateLock = Any()
-  private var audioRecord: AudioRecord? = null
+  // Written under stateLock; read lock-free by the capture thread to notice
+  // that it has been superseded.
+  @Volatile private var audioRecord: AudioRecord? = null
   private var captureThread: Thread? = null
+
+  init {
+    reactContext.addLifecycleEventListener(this)
+  }
 
   override fun getName() = NAME
 
@@ -42,6 +55,16 @@ class AudioCaptureModule(private val reactContext: ReactApplicationContext) :
     synchronized(stateLock) {
       if (isRunning.get()) {
         promise.resolve(null)
+        return
+      }
+
+      // Checked under stateLock: onHostPause's stop takes the same lock, so
+      // a start that slips in just before a pause is still stopped by it.
+      if (reactContext.lifecycleState != LifecycleState.RESUMED) {
+        promise.reject(
+          "NOT_IN_FOREGROUND",
+          "Audio capture can only start while the app is in the foreground",
+        )
         return
       }
 
@@ -61,41 +84,30 @@ class AudioCaptureModule(private val reactContext: ReactApplicationContext) :
         )
         return
       }
-      val bufferSizeBytes = maxOf(minBufferSize, FRAMES_PER_BUFFER * BYTES_PER_SAMPLE)
+      val bufferSizeBytes = captureBufferSizeBytes(minBufferSize)
 
+      // A source can fail at either step — refusing to open, or opening and
+      // then refusing to record — so each one is taken all the way to
+      // recording before falling back to the next.
+      var anySourceOpened = false
       val recorder =
         try {
-          AudioRecord(
-            MediaRecorder.AudioSource.MIC,
-            SAMPLE_RATE_HZ,
-            CHANNEL_CONFIG,
-            AUDIO_FORMAT,
-            bufferSizeBytes,
-          )
+          audioSourceIdsByPreference().firstNotNullOfOrNull { source ->
+            openRecorder(source, bufferSizeBytes)?.let { opened ->
+              anySourceOpened = true
+              startRecorder(opened)
+            }
+          }
         } catch (e: SecurityException) {
           promise.reject("PERMISSION_DENIED", "RECORD_AUDIO permission has not been granted", e)
           return
-        } catch (e: IllegalArgumentException) {
-          promise.reject("UNSUPPORTED_CONFIG", e.message, e)
-          return
         }
-
-      if (recorder.state != AudioRecord.STATE_INITIALIZED) {
-        recorder.release()
-        promise.reject("INIT_FAILED", "AudioRecord failed to initialize")
-        return
-      }
-
-      try {
-        recorder.startRecording()
-      } catch (e: IllegalStateException) {
-        recorder.release()
-        promise.reject("START_FAILED", "AudioRecord failed to start recording", e)
-        return
-      }
-      if (recorder.recordingState != AudioRecord.RECORDSTATE_RECORDING) {
-        recorder.release()
-        promise.reject("START_FAILED", "AudioRecord failed to start recording")
+      if (recorder == null) {
+        if (anySourceOpened) {
+          promise.reject("START_FAILED", "AudioRecord failed to start recording")
+        } else {
+          promise.reject("INIT_FAILED", "AudioRecord failed to initialize")
+        }
         return
       }
 
@@ -114,8 +126,21 @@ class AudioCaptureModule(private val reactContext: ReactApplicationContext) :
   override fun isCapturing(): Boolean = isRunning.get()
 
   override fun invalidate() {
+    reactContext.removeLifecycleEventListener(this)
     stopInternal()
     super.invalidate()
+  }
+
+  override fun onHostResume() {}
+
+  override fun onHostPause() {
+    if (stopInternal()) {
+      emitError(CODE_INTERRUPTED, "Audio capture stopped because the app left the foreground")
+    }
+  }
+
+  override fun onHostDestroy() {
+    stopInternal()
   }
 
   // Android's global RCTDeviceEventEmitter needs no native-side listener
@@ -124,12 +149,69 @@ class AudioCaptureModule(private val reactContext: ReactApplicationContext) :
 
   override fun removeListeners(count: Double) {}
 
-  private fun stopInternal() {
+  /**
+   * MediaRecorder.AudioSource ids to try, best first. The order itself is
+   * decided by [audioSourcesByPreference]; this only asks the device whether
+   * it has an unprocessed path and maps the result to platform constants.
+   */
+  private fun audioSourceIdsByPreference(): List<Int> {
+    val audioManager = reactContext.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+    val supportsUnprocessed =
+      audioManager?.getProperty(AudioManager.PROPERTY_SUPPORT_AUDIO_SOURCE_UNPROCESSED) == "true"
+    return audioSourcesByPreference(supportsUnprocessed).map { kind ->
+      when (kind) {
+        AudioSourceKind.UNPROCESSED -> MediaRecorder.AudioSource.UNPROCESSED
+        AudioSourceKind.VOICE_RECOGNITION -> MediaRecorder.AudioSource.VOICE_RECOGNITION
+        AudioSourceKind.MIC -> MediaRecorder.AudioSource.MIC
+      }
+    }
+  }
+
+  /**
+   * Opens an initialized recorder on [source], or returns null when the
+   * device cannot provide one — some report a source as supported and then
+   * fail to open it. A missing permission still throws SecurityException.
+   */
+  private fun openRecorder(source: Int, bufferSizeBytes: Int): AudioRecord? {
+    val recorder =
+      try {
+        AudioRecord(source, SAMPLE_RATE_HZ, CHANNEL_CONFIG, AUDIO_FORMAT, bufferSizeBytes)
+      } catch (e: IllegalArgumentException) {
+        return null
+      }
+    if (recorder.state != AudioRecord.STATE_INITIALIZED) {
+      recorder.release()
+      return null
+    }
+    return recorder
+  }
+
+  /**
+   * Starts [recorder] recording and returns it, or releases it and returns
+   * null when the device will not record from that source.
+   */
+  private fun startRecorder(recorder: AudioRecord): AudioRecord? {
+    val isRecording =
+      try {
+        recorder.startRecording()
+        recorder.recordingState == AudioRecord.RECORDSTATE_RECORDING
+      } catch (e: IllegalStateException) {
+        false
+      }
+    if (!isRecording) {
+      recorder.release()
+      return null
+    }
+    return recorder
+  }
+
+  /** Stops capture if it is running. Returns whether it was. */
+  private fun stopInternal(): Boolean {
     val recorder: AudioRecord?
     val thread: Thread?
     synchronized(stateLock) {
       if (!isRunning.getAndSet(false)) {
-        return
+        return false
       }
       recorder = audioRecord
       thread = captureThread
@@ -142,6 +224,7 @@ class AudioCaptureModule(private val reactContext: ReactApplicationContext) :
       Thread.currentThread().interrupt()
     }
     releaseRecorder(recorder)
+    return true
   }
 
   private fun releaseRecorder(recorder: AudioRecord?) {
@@ -157,7 +240,10 @@ class AudioCaptureModule(private val reactContext: ReactApplicationContext) :
     }
   }
 
-  /** Runs on a dedicated thread until `isRunning` flips false or a read fails. */
+  /**
+   * Runs on a dedicated thread until capture is stopped, this recorder is
+   * superseded by a newer start(), or a read fails.
+   */
   private fun readLoop(recorder: AudioRecord) {
     try {
       Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_AUDIO)
@@ -166,7 +252,7 @@ class AudioCaptureModule(private val reactContext: ReactApplicationContext) :
     }
 
     val buffer = ShortArray(FRAMES_PER_BUFFER)
-    while (isRunning.get()) {
+    while (isRunning.get() && audioRecord === recorder) {
       val framesRead =
         try {
           recorder.read(buffer, 0, buffer.size)
@@ -175,42 +261,38 @@ class AudioCaptureModule(private val reactContext: ReactApplicationContext) :
           // blocked in read() and released the recorder underneath us.
           break
         }
+      // Taken as soon as the blocking read returns, so it marks the capture
+      // time of the buffer's last frame.
+      val readEndNanos = SystemClock.elapsedRealtimeNanos()
       if (framesRead <= 0) {
-        if (isRunning.get()) {
-          emitError("Audio read failed with error code $framesRead")
+        if (isRunning.get() && audioRecord === recorder) {
+          emitError(CODE_READ_FAILED, "Audio read failed with error code $framesRead")
         }
         break
       }
-      emitAmplitude(computeReading(buffer, framesRead))
+      emitAmplitude(computeReading(buffer, framesRead, readEndNanos))
     }
 
     // The loop can exit on its own (read error) without stop() ever being
     // called from JS, so clear state here too rather than leaking the
-    // AudioRecord or leaving isCapturing() reporting stale state.
-    if (isRunning.getAndSet(false)) {
+    // AudioRecord or leaving isCapturing() reporting stale state. Only do so
+    // while this recorder is still the current one: if stop() already took
+    // it (and a later start() may have installed another), that state is no
+    // longer ours to clear.
+    val stillCurrent =
       synchronized(stateLock) {
-        audioRecord = null
-        captureThread = null
+        if (audioRecord === recorder) {
+          isRunning.set(false)
+          audioRecord = null
+          captureThread = null
+          true
+        } else {
+          false
+        }
       }
+    if (stillCurrent) {
       releaseRecorder(recorder)
     }
-  }
-
-  private fun computeReading(buffer: ShortArray, framesRead: Int): Reading {
-    var sumOfSquares = 0.0
-    for (i in 0 until framesRead) {
-      val sample = buffer[i].toDouble()
-      sumOfSquares += sample * sample
-    }
-    val rms = sqrt(sumOfSquares / framesRead)
-    val amplitude = (rms / MAX_PCM_16_AMPLITUDE).coerceIn(0.0, 1.0)
-    val db =
-      if (rms > 0) {
-        (20.0 * log10(rms / MAX_PCM_16_AMPLITUDE)).coerceIn(MIN_DB, 0.0)
-      } else {
-        MIN_DB
-      }
-    return Reading(amplitude, db, SystemClock.elapsedRealtime())
   }
 
   private fun emitAmplitude(reading: Reading) {
@@ -218,30 +300,44 @@ class AudioCaptureModule(private val reactContext: ReactApplicationContext) :
       Arguments.createMap().apply {
         putDouble("amplitude", reading.amplitude)
         putDouble("db", reading.db)
-        putDouble("timestamp", reading.timestamp.toDouble())
+        putDouble("peak", reading.peak)
+        putDouble("peakDb", reading.peakDb)
+        putDouble("timestamp", reading.timestampMs)
+        putDouble("peakTimestamp", reading.peakTimestampMs)
       }
-    reactContext.emitDeviceEvent(EVENT_AMPLITUDE, payload)
+    emitToJs(EVENT_AMPLITUDE, payload)
   }
 
-  private fun emitError(message: String) {
-    val payload = Arguments.createMap().apply { putString("message", message) }
-    reactContext.emitDeviceEvent(EVENT_ERROR, payload)
+  private fun emitError(code: String, message: String) {
+    val payload =
+      Arguments.createMap().apply {
+        putString("code", code)
+        putString("message", message)
+      }
+    emitToJs(EVENT_ERROR, payload)
   }
 
-  private data class Reading(val amplitude: Double, val db: Double, val timestamp: Long)
+  // The capture thread can still be mid-iteration while JS reloads or tears
+  // down; emitting then would throw on a thread with no handler.
+  private fun emitToJs(eventName: String, payload: WritableMap) {
+    if (reactContext.hasActiveReactInstance()) {
+      reactContext.emitDeviceEvent(eventName, payload)
+    }
+  }
 
   companion object {
     const val NAME = "AudioCapture"
     const val EVENT_AMPLITUDE = "AudioCapture:onAmplitude"
     const val EVENT_ERROR = "AudioCapture:onError"
 
-    private const val SAMPLE_RATE_HZ = 44100
+    // Error-event codes; mirrored by AudioCaptureErrorCode in src/types/audio.ts.
+    private const val CODE_READ_FAILED = "READ_FAILED"
+    private const val CODE_INTERRUPTED = "INTERRUPTED"
+
+    // The sample rate, buffer length and level constants live in
+    // AudioLevels.kt, next to the maths that depends on them.
     private const val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO
     private const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
-    private const val BYTES_PER_SAMPLE = 2
-    private const val FRAMES_PER_BUFFER = 1024
-    private const val MAX_PCM_16_AMPLITUDE = 32768.0
-    private const val MIN_DB = -160.0
     private const val THREAD_JOIN_TIMEOUT_MS = 500L
   }
 }

@@ -1,9 +1,25 @@
 # Testing Requirements
 
+## Tests Are Required
+
+A change to behaviour ships with unit tests **in the same change**. Which tests depends on what was touched:
+
+| What changed                                           | Tests to write                                                                                                               |
+| ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
+| TypeScript / React Native (`src/**/*.ts`, `*.tsx`)     | Jest tests in `__tests__/` — see the sections below and [react-native/testing.md](../react-native/testing.md)                |
+| Kotlin under `android/`                                | JVM unit tests under `android/app/src/test/` — see [kotlin/testing.md](../kotlin/testing.md)                                 |
+| A native module's contract (events, codes, signatures) | Both: Kotlin unit tests for the native logic **and** Jest tests for the `src/services/` wrapper that maps the contract to JS |
+
+- A bug fix starts with a test that fails because of the bug.
+- Exempt: documentation and comments, formatting-only edits, config files, and type-only changes with no runtime effect.
+- When something genuinely cannot be unit tested (microphone input, permission dialogs, layout, timing on real hardware), do not skip silently: say so in the final message and list the manual device checks that stand in for the test.
+- Before reporting work as done, state which tests were added and which behaviour is still untested.
+
 ## Stack
 
 - **Jest 29** with the `@react-native/jest-preset` preset; tests live in `__tests__/` at the repo root as `*.test.ts` / `*.test.tsx`
 - **react-test-renderer** for component tests
+- **JUnit** local JVM tests for Kotlin (see [kotlin/testing.md](../kotlin/testing.md) — not set up yet)
 - No end-to-end framework is set up. Verify UI and native behaviour by running the app.
 
 ```bash
@@ -36,7 +52,7 @@ npm run test:ci             # with coverage, as CI runs it
 
 ## Conventions
 
-- Global mocks belong in `jest.setup.js` (AsyncStorage's official in-memory mock and gesture-handler are already there). A new native module needs a mock there before any test can import it.
+- Global mocks belong in `jest.setup.js` (AsyncStorage's official in-memory mock, gesture-handler, `react-native-audio-api` and the app-local `NativeAudioCapture` spec are already there). A new native module needs a mock there before any test can import it.
 - Prefer hand-written fakes passed through a service's options over `jest.mock` of a module.
 - Clear shared state between tests (`clearSessions()` or `AsyncStorage.clear()` in `beforeEach`).
 - For anything time-based use `jest.useFakeTimers()` with `jest.setSystemTime()`, and restore real timers in `afterEach`.

@@ -1,8 +1,10 @@
 import { NativeEventEmitter, PermissionsAndroid, Platform } from 'react-native';
 
 import NativeAudioCapture from '@/specs/NativeAudioCapture';
+import { AUDIO_CAPTURE_ERROR_CODES } from '@/types/audio';
 import type {
   AmplitudeReading,
+  AudioCaptureErrorCode,
   MicrophonePermissionStatus,
 } from '@/types/audio';
 
@@ -16,20 +18,31 @@ import type {
  * It does not decide what a sound means — Calibration and the Drill Run
  * Detection Engine consume this stream to do that.
  *
+ * Capture only runs while the app is in the foreground: the native module
+ * stops it when the host activity pauses and reports that through the
+ * error stream as `INTERRUPTED`. Callers restart it when they regain focus.
+ *
  * Android-only: the native module and the app itself target Android first,
  * so every export here throws/no-ops on other platforms rather than
  * touching a TurboModule that doesn't exist there.
  */
 
 /** Error thrown by this service. Callers can catch this to distinguish
- * audio capture failures from other runtime errors. */
+ * audio capture failures from other runtime errors, and branch on `code`
+ * to tell e.g. a missing permission from a busy microphone. */
 export class AudioCaptureError extends Error {
   cause?: unknown;
+  code: AudioCaptureErrorCode;
 
-  constructor(message: string, cause?: unknown) {
+  constructor(
+    message: string,
+    cause?: unknown,
+    code: AudioCaptureErrorCode = 'UNKNOWN',
+  ) {
     super(message);
     this.name = 'AudioCaptureError';
     this.cause = cause;
+    this.code = code;
   }
 }
 
@@ -37,6 +50,8 @@ export class AudioCaptureError extends Error {
 export const AUDIO_AMPLITUDE_EVENT = 'AudioCapture:onAmplitude';
 /** Native event name emitted when the capture loop fails mid-stream. */
 export const AUDIO_CAPTURE_ERROR_EVENT = 'AudioCapture:onError';
+
+const FALLBACK_STREAM_ERROR_MESSAGE = 'Audio capture stopped unexpectedly';
 
 // Constructed lazily (rather than at module scope) so that reading
 // `Platform.OS` here always happens after the platform is known, not at
@@ -52,8 +67,26 @@ function getEmitter(): NativeEventEmitter {
 
 function assertAndroid(): void {
   if (Platform.OS !== 'android') {
-    throw new AudioCaptureError('Audio capture is only supported on Android');
+    throw new AudioCaptureError(
+      'Audio capture is only supported on Android',
+      undefined,
+      'UNSUPPORTED_PLATFORM',
+    );
   }
+}
+
+function toErrorCode(value: unknown): AudioCaptureErrorCode {
+  const known = AUDIO_CAPTURE_ERROR_CODES.find(code => code === value);
+  return known ?? 'UNKNOWN';
+}
+
+/** Read a string field off a value that crossed the native bridge. */
+function readStringField(source: unknown, field: string): string | undefined {
+  if (typeof source !== 'object' || source === null) {
+    return undefined;
+  }
+  const value = (source as Record<string, unknown>)[field];
+  return typeof value === 'string' ? value : undefined;
 }
 
 function mapPermissionResult(result: string): MicrophonePermissionStatus {
@@ -96,16 +129,20 @@ export async function hasMicrophonePermission(): Promise<boolean> {
 
 /**
  * Start the native capture loop. Resolves once recording has begun;
- * rejects with `AudioCaptureError` if microphone permission is missing or
- * the device's audio input can't be opened. Safe to call again while
- * already capturing (no-op).
+ * rejects with `AudioCaptureError` if microphone permission is missing
+ * (`code: 'PERMISSION_DENIED'`) or the device's audio input can't be
+ * opened. Safe to call again while already capturing (no-op).
  */
 export async function startAudioCapture(): Promise<void> {
   assertAndroid();
   try {
     await NativeAudioCapture.start();
   } catch (err) {
-    throw new AudioCaptureError('Failed to start audio capture', err);
+    throw new AudioCaptureError(
+      'Failed to start audio capture',
+      err,
+      toErrorCode(readStringField(err, 'code')),
+    );
   }
 }
 
@@ -118,7 +155,11 @@ export async function stopAudioCapture(): Promise<void> {
   try {
     await NativeAudioCapture.stop();
   } catch (err) {
-    throw new AudioCaptureError('Failed to stop audio capture', err);
+    throw new AudioCaptureError(
+      'Failed to stop audio capture',
+      err,
+      toErrorCode(readStringField(err, 'code')),
+    );
   }
 }
 
@@ -146,16 +187,26 @@ export function subscribeToAmplitude(
 }
 
 /**
- * Subscribe to capture-loop failures that happen after `startAudioCapture`
- * has already resolved (e.g. the input device disappears mid-run).
+ * Subscribe to the capture loop stopping on its own after
+ * `startAudioCapture` has already resolved: a failed read
+ * (`READ_FAILED`, e.g. the input device disappears mid-run) or the app
+ * leaving the foreground (`INTERRUPTED`). Capture is no longer running by
+ * the time the listener is called.
  */
 export function subscribeToAudioCaptureErrors(
-  listener: (message: string) => void,
+  listener: (error: AudioCaptureError) => void,
 ): () => void {
   assertAndroid();
   const subscription = getEmitter().addListener(
     AUDIO_CAPTURE_ERROR_EVENT,
-    (event: { message: string }) => listener(event.message),
+    (event: unknown) =>
+      listener(
+        new AudioCaptureError(
+          readStringField(event, 'message') ?? FALLBACK_STREAM_ERROR_MESSAGE,
+          event,
+          toErrorCode(readStringField(event, 'code')),
+        ),
+      ),
   );
   return () => subscription.remove();
 }
