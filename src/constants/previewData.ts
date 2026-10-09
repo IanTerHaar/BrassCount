@@ -7,6 +7,8 @@
  * real selector when the data layer lands, and delete this file.
  */
 
+import type { DrillStepType } from '@/types/drill';
+
 export type DrillSummary = {
   id: string;
   name: string;
@@ -50,8 +52,7 @@ export type DrillStep = {
  * `shot`, `reload` and `rack` map onto the calibrated dB thresholds set on
  * the Calibration screen; `draw` and `holster` bookend a string.
  */
-export type SequenceAction =
-  'draw' | 'shot' | 'reload' | 'rack' | 'transition' | 'holster';
+export type SequenceAction = DrillStepType;
 
 export const sequenceActionOptions: {
   value: SequenceAction;
