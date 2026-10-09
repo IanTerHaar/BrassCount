@@ -1,4 +1,4 @@
-import type { DrillStep } from '@/types/drill';
+import { MAX_STEP_PAR_SECONDS, type DrillStep } from '@/types/drill';
 
 /**
  * Totals derived from a drill's steps. Pure functions, no side effects —
@@ -8,6 +8,17 @@ import type { DrillStep } from '@/types/drill';
 
 /** Pars are entered and shown to the hundredth of a second. */
 const PAR_UNITS_PER_SECOND = 100;
+
+/**
+ * Whether `value` is a usable step par: a number of seconds more than 0
+ * and at most `MAX_STEP_PAR_SECONDS`. The same rule applies to a drill's
+ * step and to the par a run's split was timed against.
+ */
+export const isStepPar = (value: unknown): value is number =>
+  typeof value === 'number' &&
+  Number.isFinite(value) &&
+  value > 0 &&
+  value <= MAX_STEP_PAR_SECONDS;
 
 /** Number of `shot` steps in an ordered step list. */
 export const countShots = (steps: readonly Pick<DrillStep, 'type'>[]): number =>

@@ -9,7 +9,8 @@ import {
   type DrillStep,
   type DrillStepType,
 } from '@/types/drill';
-import { countShots, totalPar } from '@utils/drill';
+import { countShots, isStepPar, totalPar } from '@utils/drill';
+import { isNonEmptyString, isRecord, isTimestamp } from '@utils/guards';
 import { generateId as defaultGenerateId } from '@utils/id';
 import { getTimestamp as defaultGetTimestamp } from '@utils/timestamp';
 
@@ -92,23 +93,8 @@ const drills = createStorageNamespace<unknown>({
 const invalid = (message: string): DrillStorageError =>
   new DrillStorageError(message, 'INVALID_INPUT');
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
-const isNonEmptyString = (value: unknown): value is string =>
-  typeof value === 'string' && value.length > 0;
-
-const isTimestamp = (value: unknown): value is string =>
-  typeof value === 'string' && !Number.isNaN(Date.parse(value));
-
 const isStepType = (value: unknown): value is DrillStepType =>
   DRILL_STEP_TYPES.some(type => type === value);
-
-const isPar = (value: unknown): value is number =>
-  typeof value === 'number' &&
-  Number.isFinite(value) &&
-  value > 0 &&
-  value <= MAX_STEP_PAR_SECONDS;
 
 const assertId = (id: string, action: string): void => {
   if (!isNonEmptyString(id)) {
@@ -148,7 +134,7 @@ const normalizeStep = (
   if (!isStepType(type)) {
     throw invalid(`${label} has an unknown type`);
   }
-  if (par !== undefined && !isPar(par)) {
+  if (par !== undefined && !isStepPar(par)) {
     throw invalid(
       `${label} par must be more than 0 and at most ${MAX_STEP_PAR_SECONDS} seconds`,
     );
