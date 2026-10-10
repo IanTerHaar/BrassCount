@@ -1,4 +1,4 @@
-import { StyleSheet, TextInput, View } from 'react-native';
+import { StyleSheet, TextInput, View, type TextInputProps } from 'react-native';
 
 import type { Theme } from '@/theme/theme';
 import { useTheme, useThemedStyles } from '@hooks/useTheme';
@@ -17,6 +17,16 @@ type TextFieldProps = {
   /** Trailing unit shown inside the field, e.g. "dB". */
   unit?: string;
   editable?: boolean;
+  /** Most characters the field accepts; typing stops there. */
+  maxLength?: number;
+  autoCapitalize?: TextInputProps['autoCapitalize'];
+  /** Turn off for values a dictionary would mangle, such as a handle. */
+  autoCorrect?: boolean;
+  /**
+   * Why the current value cannot be used. Shown under the field, which
+   * takes the danger border, and announced when it appears.
+   */
+  error?: string | null;
   testID?: string;
 };
 
@@ -46,6 +56,7 @@ const createStyles = (theme: Theme) =>
       textAlign: 'right',
     },
     disabled: { opacity: 0.5 },
+    invalid: { borderColor: theme.colors.danger },
   });
 
 /** Labelled text input wired to the theme's surfaces and type scale. */
@@ -58,6 +69,10 @@ export const TextField = ({
   decimal = false,
   unit,
   editable = true,
+  maxLength,
+  autoCapitalize,
+  autoCorrect,
+  error,
   testID,
 }: TextFieldProps) => {
   const styles = useThemedStyles(createStyles);
@@ -78,7 +93,13 @@ export const TextField = ({
         </Typography>
       ) : null}
 
-      <View style={[styles.field, !editable && styles.disabled]}>
+      <View
+        style={[
+          styles.field,
+          !editable && styles.disabled,
+          error ? styles.invalid : null,
+        ]}
+      >
         <TextInput
           testID={testID}
           value={value}
@@ -87,6 +108,9 @@ export const TextField = ({
           placeholderTextColor={theme.colors.textTertiary}
           editable={editable}
           keyboardType={keyboardType}
+          maxLength={maxLength}
+          autoCapitalize={autoCapitalize}
+          autoCorrect={autoCorrect}
           accessibilityLabel={label}
           style={[styles.input, monoInput && styles.numericInput]}
         />
@@ -96,6 +120,17 @@ export const TextField = ({
           </Typography>
         ) : null}
       </View>
+
+      {error ? (
+        <Typography
+          variant="caption"
+          color="danger"
+          accessibilityLiveRegion="polite"
+          testID={testID ? `${testID}-error` : undefined}
+        >
+          {error}
+        </Typography>
+      ) : null}
     </View>
   );
 };

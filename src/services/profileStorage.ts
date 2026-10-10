@@ -1,6 +1,7 @@
 import {
   APPEARANCE_PREFERENCES,
   DEFAULT_PROFILE,
+  HANDLE_BODY_PATTERN,
   HANDLE_PREFIX,
   MAX_PROFILE_HANDLE_LENGTH,
   MAX_PROFILE_NAME_LENGTH,
@@ -81,9 +82,6 @@ interface StoredProfile {
   schemaVersion: number;
   profile: Profile;
 }
-
-/** What may follow the `@` of a handle. */
-const HANDLE_BODY_PATTERN = /^[A-Za-z0-9._-]+$/;
 
 // Typed `unknown` on purpose: the storage layer only promises valid JSON,
 // so every read goes through `parseStoredProfile` before it is a `Profile`.
