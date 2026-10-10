@@ -12,6 +12,7 @@ import {
 import { countShots, isStepPar, totalPar } from '@utils/drill';
 import { isNonEmptyString, isRecord, isTimestamp } from '@utils/guards';
 import { generateId as defaultGenerateId } from '@utils/id';
+import { createSerialQueue } from '@utils/serialQueue';
 import { getTimestamp as defaultGetTimestamp } from '@utils/timestamp';
 
 import { createStorageNamespace, StorageError } from './storage';
@@ -242,22 +243,13 @@ const writeDrill = async (drill: Drill, action: string): Promise<void> => {
   await withStorage(action, () => drills.setItem(drill.id, stored));
 };
 
-// Tail of the chain of changes to stored drills. `updateDrill` reads a
-// drill and then writes it back, so an overlapping update or delete could
-// otherwise land in between: one edit silently lost, or a drill that was
-// just deleted written back. Running every change one after another
-// closes that gap. Writes are rare, user-driven actions, so a single
-// queue for all drills costs nothing.
-let pendingChanges: Promise<unknown> = Promise.resolve();
-
-/** Run `change` once every change queued before it has settled. */
-const inOrder = <T>(change: () => Promise<T>): Promise<T> => {
-  const result = pendingChanges.then(change);
-  // The queue only cares that the change finished; its failure belongs
-  // to the caller, who gets it from `result`.
-  pendingChanges = result.catch(() => undefined);
-  return result;
-};
+// Queue of changes to stored drills. `updateDrill` reads a drill and then
+// writes it back, so an overlapping update or delete could otherwise land
+// in between: one edit silently lost, or a drill that was just deleted
+// written back. Running every change one after another closes that gap.
+// Writes are rare, user-driven actions, so a single queue for all drills
+// costs nothing.
+const inOrder = createSerialQueue();
 
 const byNewestUpdate = (a: Drill, b: Drill): number =>
   Date.parse(b.updatedAt) - Date.parse(a.updatedAt) ||
