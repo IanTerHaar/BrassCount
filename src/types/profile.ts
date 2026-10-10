@@ -18,6 +18,13 @@ export type AppearancePreference = (typeof APPEARANCE_PREFERENCES)[number];
 export const HANDLE_PREFIX = '@';
 
 /**
+ * What may follow the `@` of a handle. Shared by the storage service,
+ * which rejects anything else, and the Profile editor, which says so
+ * before a save is attempted.
+ */
+export const HANDLE_BODY_PATTERN = /^[A-Za-z0-9._-]+$/;
+
+/**
  * Upper bounds on what a profile may hold. The storage service enforces
  * them on every save and read, so a name or handle always fits the Profile
  * header; an editor should offer no more than these allow.

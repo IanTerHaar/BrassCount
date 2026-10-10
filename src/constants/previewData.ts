@@ -140,11 +140,6 @@ export type GunProfile = {
   };
 };
 
-export type UserProfile = {
-  name: string;
-  handle: string;
-};
-
 export const previewDrills: DrillSummary[] = [
   {
     id: 'd1',
@@ -580,8 +575,3 @@ export const previewHistory: SessionResult[] = [
     ],
   },
 ];
-
-export const previewUser: UserProfile = {
-  name: 'Marty McFly',
-  handle: '@martymcfly',
-};
