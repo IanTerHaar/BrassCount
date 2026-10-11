@@ -8,6 +8,7 @@
  */
 
 import type { DrillStepType } from '@/types/drill';
+import { stepLabel } from '@utils/drill';
 
 export type DrillSummary = {
   id: string;
@@ -54,54 +55,22 @@ export type DrillStep = {
  */
 export type SequenceAction = DrillStepType;
 
-export const sequenceActionOptions: {
-  value: SequenceAction;
-  label: string;
-  description: string;
-}[] = [
-  { value: 'draw', label: 'Draw', description: 'From the holster' },
-  { value: 'shot', label: 'Shot', description: 'One round downrange' },
-  { value: 'reload', label: 'Reload', description: 'Magazine change' },
-  { value: 'rack', label: 'Rack', description: 'Cycle the slide' },
-  {
-    value: 'transition',
-    label: 'Transition',
-    description: 'Move to the next target',
-  },
-  { value: 'holster', label: 'Holster', description: 'Make safe' },
-];
-
-export const sequenceActionLabel = (action: SequenceAction): string =>
-  sequenceActionOptions.find(option => option.value === action)?.label ??
-  action;
-
 /**
  * Human-readable label for a step at `position` in a sequence.
  *
- * Numbers repeated actions the way a shooter would call them — the second
- * `shot` in a string reads "Shot 2", not "Shot" — so a sequence with only
- * one draw stays plain "Draw", while a six-shot string reads "Shot 1"
- * through "Shot 6". Accepts any sequence of items keyed by `action`, so
- * both drill definitions (`DrillStep`) and completed runs (`RunStep`) can
- * feed it.
+ * The fixture form of `stepLabel` in `@utils/drill`, which holds the
+ * naming rule: it accepts any sequence of items keyed by `action`, so
+ * both the fixture drills (`DrillStep`) and completed runs (`RunStep`)
+ * can feed it.
  */
 export const labelForStep = (
   steps: { action: SequenceAction }[],
   position: number,
-): string => {
-  const action = steps[position].action;
-  const total = steps.filter(step => step.action === action).length;
-
-  if (total < 2) {
-    return sequenceActionLabel(action);
-  }
-
-  const ordinal = steps
-    .slice(0, position + 1)
-    .filter(step => step.action === action).length;
-
-  return `${sequenceActionLabel(action)} ${ordinal}`;
-};
+): string =>
+  stepLabel(
+    steps.map(step => ({ type: step.action })),
+    position,
+  );
 
 export type SessionResult = {
   id: string;

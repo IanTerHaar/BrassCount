@@ -5,6 +5,7 @@ export * from './Chip';
 export * from './EmptyState';
 export * from './Icon';
 export * from './ListRow';
+export * from './ParPickerSheet';
 export * from './Screen';
 export * from './SectionHeader';
 export * from './Select';

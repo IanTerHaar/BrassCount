@@ -20,6 +20,13 @@ export const formatElapsed = (totalSeconds: number): string => {
 export const formatSeconds = (seconds: number): string =>
   `${seconds.toFixed(2)}s`;
 
+/**
+ * A duration as a screen reader should say it: `0.25 seconds`, `1 second`.
+ * A bare `0.25s` is read as a number and a stray letter.
+ */
+export const spokenSeconds = (seconds: number): string =>
+  `${seconds} second${seconds === 1 ? '' : 's'}`;
+
 /** Level → `-12 dB`, rounded to a whole decibel; `—` when there is none. */
 export const formatDecibels = (decibels: number | null): string =>
   // `+ 0` turns the -0 that rounding -0.4 gives into a plain 0.

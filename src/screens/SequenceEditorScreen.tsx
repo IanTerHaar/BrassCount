@@ -1,11 +1,10 @@
-import { useState } from 'react';
+import { memo, useCallback, useState } from 'react';
 
 import {
-  Modal,
-  Pressable,
-  ScrollView,
+  AccessibilityInfo,
   StyleSheet,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from 'react-native';
 
@@ -15,51 +14,89 @@ import {
   type RouteProp,
 } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { Theme } from '@/theme/theme';
+import {
+  MAX_DRILL_NAME_LENGTH,
+  MAX_DRILL_STEPS,
+  type DrillStep,
+  type DrillStepType,
+} from '@/types/drill';
 import type { RootStackParamList } from '@/types/navigation';
 import { Button } from '@components/Button';
 import { Card } from '@components/Card';
+import { EmptyState } from '@components/EmptyState';
 import { Icon } from '@components/Icon';
+import { ParPickerSheet } from '@components/ParPickerSheet';
 import { Screen } from '@components/Screen';
 import { SectionHeader } from '@components/SectionHeader';
-import { Select } from '@components/Select';
+import { Select, type SelectOption } from '@components/Select';
 import { TextField } from '@components/TextField';
 import { Typography } from '@components/Typography';
-import {
-  labelForStep,
-  previewDrills,
-  sequenceActionOptions,
-  type DrillStep,
-  type SequenceAction,
-} from '@constants/previewData';
+import { useDrillEditor, type DrillEditorStatus } from '@hooks/useDrillEditor';
 import { useThemedStyles } from '@hooks/useTheme';
-import { formatSeconds, pluralize } from '@utils/format';
+import { countShots, stepLabel, stepTypeLabel, totalPar } from '@utils/drill';
+import { canAddStep, nextStepType, stepTypeChoices } from '@utils/drillDraft';
+import { formatSeconds, pluralize, spokenSeconds } from '@utils/format';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type EditorRoute = RouteProp<RootStackParamList, 'SequenceEditor'>;
 
-const DEFAULT_STEP: DrillStep = { action: 'shot' };
+/** The hint under each step type in the open dropdown. */
+const STEP_TYPE_DESCRIPTIONS: Record<DrillStepType, string> = {
+  draw: 'From the holster',
+  shot: 'One round downrange',
+  reload: 'Magazine change',
+  rack: 'Cycle the slide',
+  transition: 'Move to the next target',
+  holster: 'Make safe',
+};
 
-/** Preset step-par options for the picker sheet. */
-const PAR_PRESETS: {
-  seconds: number | undefined;
-  label: string;
-  description?: string;
-}[] = [
-  { seconds: undefined, label: 'No par', description: 'Untimed step' },
-  { seconds: 0.15, label: '0.15s', description: 'Very fast split' },
-  { seconds: 0.2, label: '0.20s' },
-  { seconds: 0.25, label: '0.25s', description: 'Comfortable split' },
-  { seconds: 0.3, label: '0.30s' },
-  { seconds: 0.5, label: '0.50s', description: 'Head shot / transition' },
-  { seconds: 0.75, label: '0.75s' },
-  { seconds: 1.0, label: '1.00s' },
-  { seconds: 1.5, label: '1.50s', description: 'Draw from concealment' },
-  { seconds: 2.0, label: '2.00s', description: 'Reload' },
-  { seconds: 3.0, label: '3.00s' },
-];
+const stepTypeOptions = (
+  current: DrillStepType,
+): SelectOption<DrillStepType>[] =>
+  stepTypeChoices(current).map(type => ({
+    value: type,
+    label: stepTypeLabel(type),
+    description: STEP_TYPE_DESCRIPTIONS[type],
+  }));
+
+/**
+ * Narrowest the step-type dropdown may get, at the default text size,
+ * before the par and remove controls drop to a line of their own. It
+ * grows with the system font scale, so large text wraps the row instead
+ * of cutting the type name short.
+ */
+const STEP_SELECT_MIN_WIDTH = 112;
+
+/**
+ * Extra touch area around the two small controls of a step row, taking
+ * each up to the 48dp minimum without growing the row. The remove button
+ * is a 32dp circle; the par pill is wide enough but about 26dp tall.
+ */
+const REMOVE_HIT_SLOP = { top: 8, bottom: 8, left: 8, right: 8 };
+const PAR_HIT_SLOP = { top: 11, bottom: 11 };
+
+/** The line under the title once the drill has steps. */
+const describeSteps = (steps: readonly DrillStep[]): string => {
+  const counts = `${pluralize(steps.length, 'step')} · ${pluralize(
+    countShots(steps),
+    'shot',
+  )}`;
+  const par = totalPar(steps);
+  return par === null ? counts : `${counts} · Par ${formatSeconds(par)}`;
+};
+
+/** The whole sequence in one sentence, for the Preview card's reader label. */
+const spokenPreview = (steps: readonly DrillStep[]): string =>
+  steps
+    .map((step, i) => {
+      const label = stepLabel(steps, i);
+      return step.par === undefined
+        ? label
+        : `${label}, ${spokenSeconds(step.par)}`;
+    })
+    .join('; then ');
 
 const createStyles = (theme: Theme) =>
   StyleSheet.create({
@@ -69,7 +106,11 @@ const createStyles = (theme: Theme) =>
     },
     stepRow: {
       flexDirection: 'row',
+      flexWrap: 'wrap',
       alignItems: 'center',
+      // Sends the par and remove controls to the right edge when large
+      // text drops them to a second line.
+      justifyContent: 'flex-end',
       gap: theme.spacing.sm,
       paddingVertical: theme.spacing.sm,
       paddingHorizontal: theme.spacing.md,
@@ -79,14 +120,15 @@ const createStyles = (theme: Theme) =>
       borderBottomColor: theme.colors.border,
     },
     badge: {
-      width: 26,
-      height: 26,
+      minWidth: 26,
+      minHeight: 26,
+      paddingHorizontal: theme.spacing.xs,
       borderRadius: theme.radius.sm + 2,
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: theme.colors.primarySoft,
     },
-    stepSelect: { flex: 1 },
+    stepSelect: { flexGrow: 1, flexShrink: 1 },
     parChip: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -111,15 +153,23 @@ const createStyles = (theme: Theme) =>
       backgroundColor: theme.colors.surfaceElevated,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: theme.colors.border,
-      // Rotating the plus gives a cross without a second glyph.
-      transform: [{ rotate: '45deg' }],
     },
+    // Rotating the plus gives a cross without a second glyph. The rotation
+    // sits inside the button, not on it: Android stops delivering presses
+    // to a touchable that is both rotated and given a `hitSlop`.
+    removeGlyph: { transform: [{ rotate: '45deg' }] },
     addRow: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
       gap: theme.spacing.sm,
       paddingVertical: theme.spacing.md,
+      paddingHorizontal: theme.spacing.md,
+    },
+    addRowDisabled: { opacity: 0.5 },
+    limitNote: {
+      paddingHorizontal: theme.spacing.md,
+      paddingBottom: theme.spacing.md,
     },
     emptyRow: {
       paddingVertical: theme.spacing.lg,
@@ -134,134 +184,288 @@ const createStyles = (theme: Theme) =>
       gap: theme.spacing.xs,
     },
     footer: { gap: theme.spacing.sm },
-
-    // Par-picker bottom sheet — mirrors the Select sheet so the two feel
-    // like the same primitive.
-    backdrop: {
-      flex: 1,
-      justifyContent: 'flex-end',
-      backgroundColor: theme.colors.overlay,
-    },
-    sheet: {
-      backgroundColor: theme.colors.background,
-      borderTopLeftRadius: theme.radius.lg,
-      borderTopRightRadius: theme.radius.lg,
-      paddingTop: theme.spacing.sm,
-    },
-    grabber: {
-      alignSelf: 'center',
-      width: 36,
-      height: 4,
-      borderRadius: theme.radius.pill,
-      backgroundColor: theme.colors.borderStrong,
-      marginBottom: theme.spacing.sm,
-    },
-    sheetHeader: {
-      paddingHorizontal: theme.spacing.lg,
-      paddingBottom: theme.spacing.sm,
-      gap: 2,
-    },
-    customRow: {
-      flexDirection: 'row',
-      alignItems: 'flex-end',
-      gap: theme.spacing.sm,
-      paddingHorizontal: theme.spacing.lg,
-      paddingBottom: theme.spacing.md,
-    },
-    customField: { flex: 1 },
-    presetHeader: {
-      paddingHorizontal: theme.spacing.lg,
-      paddingTop: theme.spacing.sm,
-      paddingBottom: theme.spacing.xs,
-      borderTopWidth: StyleSheet.hairlineWidth,
-      borderTopColor: theme.colors.border,
-    },
-    parOption: {
-      flexDirection: 'row',
+    loading: {
       alignItems: 'center',
-      gap: theme.spacing.md,
-      paddingVertical: theme.spacing.md - theme.spacing.xs,
-      paddingHorizontal: theme.spacing.lg,
-      minHeight: 56,
+      paddingVertical: theme.spacing.xxl,
     },
-    parOptionDivider: {
-      borderTopWidth: StyleSheet.hairlineWidth,
-      borderTopColor: theme.colors.border,
-    },
-    parOptionBody: { flex: 1, gap: 2 },
-    parOptionList: { maxHeight: 420 },
   });
 
-export const SequenceEditorScreen = () => {
+type StepRowProps = {
+  step: DrillStep;
+  /** Where the step sits in the drill, counted from 0. */
+  position: number;
+  /** What the step is called in the sequence, e.g. "Shot 2". */
+  label: string;
+  /** Narrowest the dropdown may get before the row wraps. */
+  selectMinWidth: number;
+  onChangeType: (id: string, type: DrillStepType) => void;
+  /** Open the par picker for the step with this id. */
+  onEditPar: (id: string) => void;
+  onRemove: (id: string) => void;
+};
+
+/**
+ * One step of the drill: its number, type dropdown, par and remove
+ * control. Memoised so typing the drill's name, or changing one step, does
+ * not draw every other row again.
+ */
+const StepRow = memo(
+  ({
+    step,
+    position,
+    label,
+    selectMinWidth,
+    onChangeType,
+    onEditPar,
+    onRemove,
+  }: StepRowProps) => {
+    const styles = useThemedStyles(createStyles);
+    const number = position + 1;
+    const hasPar = step.par !== undefined;
+
+    return (
+      <View
+        style={[styles.stepRow, styles.stepDivider]}
+        testID={`row-step-${position}`}
+      >
+        <View style={styles.badge}>
+          <Typography variant="overline" color="primary">
+            {String(number)}
+          </Typography>
+        </View>
+
+        <View style={[styles.stepSelect, { minWidth: selectMinWidth }]}>
+          <Select
+            value={step.type}
+            options={stepTypeOptions(step.type)}
+            onChange={next => onChangeType(step.id, next)}
+            sheetTitle={`Step ${number}`}
+            testID={`select-step-${position}`}
+          />
+        </View>
+
+        <TouchableOpacity
+          onPress={() => onEditPar(step.id)}
+          accessibilityRole="button"
+          accessibilityLabel={
+            step.par === undefined
+              ? `Set par for step ${number}`
+              : `Change par for step ${number}, currently ${spokenSeconds(
+                  step.par,
+                )}`
+          }
+          hitSlop={PAR_HIT_SLOP}
+          style={[styles.parChip, hasPar && styles.parChipSet]}
+          testID={`btn-par-step-${position}`}
+        >
+          <Icon
+            name="timer"
+            size={12}
+            color={hasPar ? 'primary' : 'textTertiary'}
+          />
+          <Typography
+            variant="label"
+            color={hasPar ? 'primary' : 'textTertiary'}
+          >
+            {step.par === undefined ? '+ par' : formatSeconds(step.par)}
+          </Typography>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={() => {
+            onRemove(step.id);
+            // The row, and the reader's focus with it, is gone: say so.
+            AccessibilityInfo.announceForAccessibility(
+              `Removed step ${number}, ${label}`,
+            );
+          }}
+          accessibilityRole="button"
+          accessibilityLabel={`Remove step ${number}, ${label}`}
+          hitSlop={REMOVE_HIT_SLOP}
+          style={styles.removeButton}
+          testID={`btn-remove-step-${position}`}
+        >
+          <View style={styles.removeGlyph}>
+            <Icon name="plus" size={16} color="textSecondary" />
+          </View>
+        </TouchableOpacity>
+      </View>
+    );
+  },
+);
+
+StepRow.displayName = 'StepRow';
+
+type StepPreviewProps = {
+  steps: readonly DrillStep[];
+};
+
+/**
+ * The sequence on one wrapping line: each step, its par, and an arrow.
+ * Memoised so typing the drill's name does not draw the sequence again.
+ */
+const StepPreview = memo(({ steps }: StepPreviewProps) => {
+  const styles = useThemedStyles(createStyles);
+
+  return (
+    <View>
+      <SectionHeader title="Preview" />
+      <Card>
+        {/* Read as one sentence: the arrows and brackets mean nothing
+            spoken a step at a time. */}
+        <View
+          accessible
+          accessibilityLabel={spokenPreview(steps)}
+          style={styles.summary}
+          testID="text-preview"
+        >
+          {steps.map((step, i) => (
+            <Typography key={step.id} variant="label">
+              {stepLabel(steps, i)}
+              {step.par === undefined ? null : (
+                <Typography variant="label" color="textTertiary">
+                  {` (${formatSeconds(step.par)})`}
+                </Typography>
+              )}
+              {i < steps.length - 1 ? (
+                <Typography variant="label" color="textTertiary">
+                  {'  →  '}
+                </Typography>
+              ) : null}
+            </Typography>
+          ))}
+        </View>
+      </Card>
+    </View>
+  );
+});
+
+StepPreview.displayName = 'StepPreview';
+
+type EditorUnavailableProps = {
+  status: Exclude<DrillEditorStatus, 'ready'>;
+  onRetry: () => void;
+  onBack: () => void;
+};
+
+/** What stands in for the editor while a saved drill cannot be shown. */
+const EditorUnavailable = ({
+  status,
+  onRetry,
+  onBack,
+}: EditorUnavailableProps) => {
+  const styles = useThemedStyles(createStyles);
+
+  if (status === 'loading') {
+    return (
+      <Card>
+        <View style={styles.loading}>
+          <Typography
+            variant="body"
+            color="textSecondary"
+            testID="text-editor-loading"
+          >
+            Loading drill…
+          </Typography>
+        </View>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      {/* Announced: it takes the place of the loading line on its own. */}
+      <View accessibilityLiveRegion="polite">
+        {status === 'missing' ? (
+          <EmptyState
+            icon="list"
+            title="Drill not found"
+            message="It is no longer saved on this device."
+            actionLabel="Back to drills"
+            onActionPress={onBack}
+            testID="state-editor-missing"
+          />
+        ) : (
+          <EmptyState
+            icon="list"
+            title="Could not load this drill"
+            message="Something went wrong reading it from this device."
+            actionLabel="Try again"
+            onActionPress={onRetry}
+            testID="state-editor-error"
+          />
+        )}
+      </View>
+    </Card>
+  );
+};
+
+type DrillEditorProps = {
+  /** Id of the saved drill to edit; leave off to build a new one. */
+  drillId?: string;
+};
+
+const DrillEditor = ({ drillId }: DrillEditorProps) => {
   const styles = useThemedStyles(createStyles);
   const navigation = useNavigation<Nav>();
-  const route = useRoute<EditorRoute>();
-  const insets = useSafeAreaInsets();
+  const { fontScale } = useWindowDimensions();
+  const {
+    status,
+    name,
+    steps,
+    setName,
+    addStep,
+    removeStep,
+    changeStepType,
+    setStepPar,
+    reload,
+  } = useDrillEditor(drillId);
+  // The step whose par is being picked. An id, not a position, so it
+  // still points at the same step whatever happens to the list.
+  const [parStepId, setParStepId] = useState<string | null>(null);
 
-  const existing = previewDrills.find(item => item.id === route.params?.id);
+  const closeParPicker = useCallback(() => setParStepId(null), []);
 
-  const [name, setName] = useState(existing?.name ?? '');
-  const [steps, setSteps] = useState<DrillStep[]>(existing?.steps ?? []);
-  const [parEditingStep, setParEditingStep] = useState<number | null>(null);
-  const [customParInput, setCustomParInput] = useState('');
-
-  const addStep = () => setSteps(prev => [...prev, { ...DEFAULT_STEP }]);
-
-  const removeStep = (position: number) =>
-    setSteps(prev => prev.filter((_, i) => i !== position));
-
-  const changeStep = (position: number, next: SequenceAction) =>
-    setSteps(prev =>
-      prev.map((step, i) =>
-        i === position ? { ...step, action: next } : step,
-      ),
+  const addAndAnnounceStep = () => {
+    // Nothing else tells a screen reader the list grew: the button keeps
+    // its label and the new row appears above it.
+    AccessibilityInfo.announceForAccessibility(
+      `Added step ${steps.length + 1}, ${stepTypeLabel(nextStepType(steps))}`,
     );
+    addStep();
+  };
 
-  const setStepPar = (position: number, parSeconds: number | undefined) =>
-    setSteps(prev =>
-      prev.map((step, i) => (i === position ? { ...step, parSeconds } : step)),
+  const editing = drillId !== undefined;
+  const title = editing ? 'Edit drill' : 'New drill';
+
+  if (status !== 'ready') {
+    return (
+      <Screen
+        title={title}
+        onBack={navigation.goBack}
+        scrollable
+        testID="screen-drill-editor"
+      >
+        <EditorUnavailable
+          status={status}
+          onRetry={reload}
+          onBack={navigation.goBack}
+        />
+      </Screen>
     );
+  }
 
-  /** Prefill the custom input with the current par so tweaks are one keystroke. */
-  const openParPicker = (position: number) => {
-    const current = steps[position]?.parSeconds;
-    setCustomParInput(current !== undefined ? current.toFixed(2) : '');
-    setParEditingStep(position);
-  };
-
-  const closeParPicker = () => setParEditingStep(null);
-
-  const commitPar = (parSeconds: number | undefined) => {
-    if (parEditingStep !== null) {
-      setStepPar(parEditingStep, parSeconds);
-    }
-    closeParPicker();
-  };
-
-  const parsedCustomPar = parseFloat(customParInput);
-  const isCustomParValid =
-    Number.isFinite(parsedCustomPar) &&
-    parsedCustomPar > 0 &&
-    parsedCustomPar <= 60;
-
-  const commitCustomPar = () => {
-    if (isCustomParValid) {
-      commitPar(Math.round(parsedCustomPar * 100) / 100);
-    }
-  };
-
-  const editingStep = parEditingStep !== null ? steps[parEditingStep] : null;
-
-  const shotCount = steps.filter(step => step.action === 'shot').length;
+  const parPosition = steps.findIndex(step => step.id === parStepId);
   const canSave = name.trim().length > 0 && steps.length > 0;
+  const hasRoom = canAddStep(steps);
 
   return (
     <Screen
-      title={existing ? 'Edit drill' : 'New drill'}
+      title={title}
       onBack={navigation.goBack}
       subtitle={
-        steps.length
-          ? `${pluralize(steps.length, 'step')} · ${shotCount} shots`
+        steps.length > 0
+          ? describeSteps(steps)
           : 'Name it, then add the actions in order'
       }
       scrollable
@@ -273,6 +477,7 @@ export const SequenceEditorScreen = () => {
           value={name}
           onChangeText={setName}
           placeholder="e.g. Bill Drill"
+          maxLength={MAX_DRILL_NAME_LENGTH}
           testID="input-drill-name"
         />
       </Card>
@@ -286,7 +491,7 @@ export const SequenceEditorScreen = () => {
 
         <Card flush>
           {steps.length === 0 ? (
-            <View style={styles.emptyRow}>
+            <View style={styles.emptyRow} testID="state-steps-empty">
               <Typography variant="bodyStrong" color="textSecondary">
                 No steps yet
               </Typography>
@@ -295,77 +500,29 @@ export const SequenceEditorScreen = () => {
               </Typography>
             </View>
           ) : (
-            steps.map((step, i) => {
-              const hasPar = step.parSeconds !== undefined;
-              return (
-                <View
-                  key={`step-${i}`}
-                  style={[styles.stepRow, styles.stepDivider]}
-                >
-                  <View style={styles.badge}>
-                    <Typography variant="overline" color="primary">
-                      {String(i + 1)}
-                    </Typography>
-                  </View>
-
-                  <View style={styles.stepSelect}>
-                    <Select
-                      value={step.action}
-                      options={sequenceActionOptions}
-                      onChange={next => changeStep(i, next)}
-                      sheetTitle={`Step ${i + 1}`}
-                      testID={`select-step-${i}`}
-                    />
-                  </View>
-
-                  <TouchableOpacity
-                    onPress={() => openParPicker(i)}
-                    accessibilityRole="button"
-                    accessibilityLabel={
-                      hasPar
-                        ? `Change par for step ${i + 1}, currently ${
-                            step.parSeconds
-                          } seconds`
-                        : `Set par for step ${i + 1}`
-                    }
-                    style={[styles.parChip, hasPar && styles.parChipSet]}
-                    testID={`btn-par-step-${i}`}
-                  >
-                    <Icon
-                      name="timer"
-                      size={12}
-                      color={hasPar ? 'primary' : 'textTertiary'}
-                    />
-                    <Typography
-                      variant="label"
-                      color={hasPar ? 'primary' : 'textTertiary'}
-                    >
-                      {hasPar ? formatSeconds(step.parSeconds!) : '+ par'}
-                    </Typography>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    onPress={() => removeStep(i)}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Remove step ${i + 1}, ${labelForStep(
-                      steps,
-                      i,
-                    )}`}
-                    style={styles.removeButton}
-                    testID={`btn-remove-step-${i}`}
-                  >
-                    <Icon name="plus" size={16} color="textSecondary" />
-                  </TouchableOpacity>
-                </View>
-              );
-            })
+            // Mapped, not virtualised: a drill holds at most
+            // `MAX_DRILL_STEPS` rows, and they sit inside the card.
+            steps.map((step, i) => (
+              <StepRow
+                key={step.id}
+                step={step}
+                position={i}
+                label={stepLabel(steps, i)}
+                selectMinWidth={STEP_SELECT_MIN_WIDTH * fontScale}
+                onChangeType={changeStepType}
+                onEditPar={setParStepId}
+                onRemove={removeStep}
+              />
+            ))
           )}
 
           <TouchableOpacity
-            onPress={addStep}
+            onPress={addAndAnnounceStep}
+            disabled={!hasRoom}
             accessibilityRole="button"
             accessibilityLabel="Add step"
-            style={styles.addRow}
+            accessibilityState={{ disabled: !hasRoom }}
+            style={[styles.addRow, !hasRoom && styles.addRowDisabled]}
             testID="btn-add-step"
           >
             <Icon name="plus" size={18} color="primary" />
@@ -373,37 +530,29 @@ export const SequenceEditorScreen = () => {
               Add step
             </Typography>
           </TouchableOpacity>
+
+          {hasRoom ? null : (
+            <Typography
+              variant="caption"
+              color="textTertiary"
+              align="center"
+              accessibilityLiveRegion="polite"
+              style={styles.limitNote}
+              testID="text-step-limit"
+            >
+              {`A drill can have at most ${MAX_DRILL_STEPS} steps.`}
+            </Typography>
+          )}
         </Card>
       </View>
 
-      {steps.length > 0 ? (
-        <View>
-          <SectionHeader title="Preview" />
-          <Card>
-            <View style={styles.summary}>
-              {steps.map((step, i) => (
-                <Typography key={`preview-${i}`} variant="label">
-                  {labelForStep(steps, i)}
-                  {step.parSeconds !== undefined ? (
-                    <Typography variant="label" color="textTertiary">
-                      {` (${formatSeconds(step.parSeconds)})`}
-                    </Typography>
-                  ) : null}
-                  {i < steps.length - 1 ? (
-                    <Typography variant="label" color="textTertiary">
-                      {'  →  '}
-                    </Typography>
-                  ) : null}
-                </Typography>
-              ))}
-            </View>
-          </Card>
-        </View>
-      ) : null}
+      {steps.length > 0 ? <StepPreview steps={steps} /> : null}
 
       <View style={styles.footer}>
+        {/* Not wired to storage yet: the button only leaves the editor,
+            and the draft goes with it. */}
         <Button
-          label={existing ? 'Save changes' : 'Create drill'}
+          label={editing ? 'Save changes' : 'Create drill'}
           onPress={navigation.goBack}
           disabled={!canSave}
           testID="btn-save-drill"
@@ -415,103 +564,33 @@ export const SequenceEditorScreen = () => {
         ) : null}
       </View>
 
-      <Modal
-        visible={parEditingStep !== null}
-        transparent
-        animationType="slide"
-        onRequestClose={closeParPicker}
-      >
-        <Pressable
-          style={styles.backdrop}
-          accessibilityLabel="Close par picker"
-          onPress={closeParPicker}
-        >
-          {/* Swallow taps inside the sheet so they don't dismiss it. */}
-          <Pressable
-            onPress={event => event.stopPropagation()}
-            style={[styles.sheet, { paddingBottom: insets.bottom + 8 }]}
-          >
-            <View style={styles.grabber} />
-
-            <View style={styles.sheetHeader}>
-              <Typography variant="overline" color="textSecondary">
-                {parEditingStep !== null
-                  ? `STEP ${parEditingStep + 1} PAR`
-                  : 'PAR'}
-              </Typography>
-              <Typography variant="caption" color="textTertiary">
-                {parEditingStep === 0
-                  ? 'Max time from the timer start to this step.'
-                  : 'Max time from the previous step to this one.'}
-              </Typography>
-            </View>
-
-            <View style={styles.customRow}>
-              <View style={styles.customField}>
-                <TextField
-                  label="Custom"
-                  value={customParInput}
-                  onChangeText={setCustomParInput}
-                  placeholder="0.00"
-                  decimal
-                  unit="s"
-                  testID="input-par-custom"
-                />
-              </View>
-              <Button
-                label="Set"
-                onPress={commitCustomPar}
-                disabled={!isCustomParValid}
-                testID="btn-par-custom-set"
-              />
-            </View>
-
-            <View style={styles.presetHeader}>
-              <Typography variant="overline" color="textSecondary">
-                OR PICK A PRESET
-              </Typography>
-            </View>
-
-            <ScrollView style={styles.parOptionList} bounces={false}>
-              {PAR_PRESETS.map((preset, i) => {
-                const isSelected =
-                  editingStep?.parSeconds === preset.seconds ||
-                  (preset.seconds === undefined &&
-                    editingStep?.parSeconds === undefined);
-
-                return (
-                  <Pressable
-                    key={preset.label}
-                    onPress={() => commitPar(preset.seconds)}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected: isSelected }}
-                    style={[styles.parOption, i > 0 && styles.parOptionDivider]}
-                    testID={`opt-par-${preset.seconds ?? 'none'}`}
-                  >
-                    <View style={styles.parOptionBody}>
-                      <Typography
-                        variant="bodyStrong"
-                        color={isSelected ? 'primary' : 'textPrimary'}
-                      >
-                        {preset.label}
-                      </Typography>
-                      {preset.description ? (
-                        <Typography variant="caption" color="textTertiary">
-                          {preset.description}
-                        </Typography>
-                      ) : null}
-                    </View>
-
-                    {isSelected ? (
-                      <Icon name="check" size={18} color="primary" />
-                    ) : null}
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
-          </Pressable>
-        </Pressable>
-      </Modal>
+      <ParPickerSheet
+        visible={parPosition >= 0}
+        stepNumber={parPosition + 1}
+        par={steps[parPosition]?.par}
+        onSelect={par => {
+          if (parStepId !== null) {
+            setStepPar(parStepId, par);
+          }
+          closeParPicker();
+        }}
+        onClose={closeParPicker}
+      />
     </Screen>
   );
+};
+
+/**
+ * Create / edit a drill: its name and its ordered steps, each with a type
+ * and an optional par, plus a live preview of the sequence. Opened with
+ * the id of a saved drill it starts from that drill; without one it
+ * starts empty. The draft is local state only — nothing is saved yet.
+ */
+export const SequenceEditorScreen = () => {
+  const route = useRoute<EditorRoute>();
+  const drillId = route.params?.id;
+
+  // Keyed by the drill, so being pointed at another one starts a fresh
+  // editor instead of showing the new drill under the old draft.
+  return <DrillEditor key={drillId ?? 'new'} drillId={drillId} />;
 };

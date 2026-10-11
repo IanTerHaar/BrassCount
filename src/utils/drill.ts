@@ -1,4 +1,8 @@
-import { MAX_STEP_PAR_SECONDS, type DrillStep } from '@/types/drill';
+import {
+  MAX_STEP_PAR_SECONDS,
+  type DrillStep,
+  type DrillStepType,
+} from '@/types/drill';
 
 /**
  * Totals derived from a drill's steps. Pure functions, no side effects —
@@ -8,6 +12,10 @@ import { MAX_STEP_PAR_SECONDS, type DrillStep } from '@/types/drill';
 
 /** Pars are entered and shown to the hundredth of a second. */
 const PAR_UNITS_PER_SECOND = 100;
+
+/** A number of seconds rounded to the precision a par is kept at. */
+export const roundPar = (seconds: number): number =>
+  Math.round(seconds * PAR_UNITS_PER_SECOND) / PAR_UNITS_PER_SECOND;
 
 /**
  * Whether `value` is a usable step par: a number of seconds more than 0
@@ -20,9 +28,14 @@ export const isStepPar = (value: unknown): value is number =>
   value > 0 &&
   value <= MAX_STEP_PAR_SECONDS;
 
+const countOfType = (
+  steps: readonly Pick<DrillStep, 'type'>[],
+  type: DrillStepType,
+): number => steps.filter(step => step.type === type).length;
+
 /** Number of `shot` steps in an ordered step list. */
 export const countShots = (steps: readonly Pick<DrillStep, 'type'>[]): number =>
-  steps.filter(step => step.type === 'shot').length;
+  countOfType(steps, 'shot');
 
 /**
  * Sum of every step's par in seconds, if — and only if — every step has
@@ -48,5 +61,46 @@ export const totalPar = (
     sum += step.par;
   }
 
-  return Math.round(sum * PAR_UNITS_PER_SECOND) / PAR_UNITS_PER_SECOND;
+  return roundPar(sum);
+};
+
+const STEP_TYPE_LABELS: Record<DrillStepType, string> = {
+  draw: 'Draw',
+  shot: 'Shot',
+  reload: 'Reload',
+  rack: 'Rack',
+  transition: 'Transition',
+  holster: 'Holster',
+};
+
+/** A step type as it is named on screen: `shot` reads "Shot". */
+export const stepTypeLabel = (type: DrillStepType): string =>
+  STEP_TYPE_LABELS[type];
+
+/**
+ * What to call the step at `position` in an ordered step list.
+ *
+ * A type that repeats is numbered the way a shooter would call it — the
+ * second `shot` reads "Shot 2" — while a type that appears once stays
+ * plain, so a string with one draw reads "Draw", not "Draw 1".
+ *
+ * Throws `RangeError` when there is no step at `position`.
+ */
+export const stepLabel = (
+  steps: readonly Pick<DrillStep, 'type'>[],
+  position: number,
+): string => {
+  const step = steps[position];
+  if (step === undefined) {
+    throw new RangeError(`There is no step at position ${position}`);
+  }
+
+  const label = stepTypeLabel(step.type);
+  const total = countOfType(steps, step.type);
+  if (total < 2) {
+    return label;
+  }
+
+  const ordinal = countOfType(steps.slice(0, position + 1), step.type);
+  return `${label} ${ordinal}`;
 };
