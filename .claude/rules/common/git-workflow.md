@@ -22,6 +22,10 @@ Never commit directly to `main`.
 
 The husky `commit-msg` hook rejects anything else. The `pre-commit` hook runs lint-staged (`eslint --fix --max-warnings=0` and `prettier --write`) on staged files; if it fails, fix the issue and commit again — never bypass hooks with `--no-verify`.
 
+### No Claude co-author trailer
+
+Do not end a commit message with a `Co-Authored-By: Claude …` line on this repo, whatever the tool's default is. The project owner asked for commits without it: a commit made with Claude Code is authored by the person who asked for it.
+
 ## Versioning
 
 Never hand-edit `package.json`'s `version`, `package-lock.json`'s version, or `VERSION.txt`. On merge to `main` a bot bumps all three and creates a `v*` tag.
