@@ -1,5 +1,6 @@
 import {
   DRILL_STEP_TYPES,
+  MAX_DRILL_NAME_LENGTH,
   MAX_DRILL_STEPS,
   MAX_STEP_PAR_SECONDS,
   type DrillStep,
@@ -9,6 +10,7 @@ import {
   addStep,
   canAddStep,
   changeStepType,
+  drillDraftProblems,
   nextStepType,
   parseParInput,
   removeStep,
@@ -256,5 +258,59 @@ describe('parseParInput', () => {
     ['Infinity', 'Infinity'],
   ])('rejects %s', (_case, text) => {
     expect(parseParInput(text)).toBeNull();
+  });
+});
+
+describe('drillDraftProblems', () => {
+  it('finds nothing wrong with a named drill that has a step', () => {
+    expect(drillDraftProblems('Bill Drill', STEPS)).toEqual([]);
+  });
+
+  it('needs a name', () => {
+    expect(drillDraftProblems('', STEPS)).toEqual(['name-missing']);
+  });
+
+  it('does not count a name made of spaces', () => {
+    expect(drillDraftProblems('   ', STEPS)).toEqual(['name-missing']);
+  });
+
+  it('needs at least one step', () => {
+    expect(drillDraftProblems('Bill Drill', [])).toEqual(['no-steps']);
+  });
+
+  it('lists everything that is missing, the name first', () => {
+    expect(drillDraftProblems('', [])).toEqual(['name-missing', 'no-steps']);
+  });
+
+  it('accepts a single untimed step', () => {
+    expect(drillDraftProblems('Draw', [{ id: 'a', type: 'draw' }])).toEqual([]);
+  });
+
+  it('accepts the longest name a drill may have', () => {
+    const name = 'n'.repeat(MAX_DRILL_NAME_LENGTH);
+
+    expect(drillDraftProblems(name, STEPS)).toEqual([]);
+  });
+
+  it('rejects a name longer than a drill may have', () => {
+    const name = 'n'.repeat(MAX_DRILL_NAME_LENGTH + 1);
+
+    expect(drillDraftProblems(name, STEPS)).toEqual(['name-too-long']);
+  });
+
+  it('measures the name as it is stored, without the spaces around it', () => {
+    const name = `  ${'n'.repeat(MAX_DRILL_NAME_LENGTH)}  `;
+
+    expect(drillDraftProblems(name, STEPS)).toEqual([]);
+  });
+
+  it('accepts the most steps a drill may have', () => {
+    expect(drillDraftProblems('Long', fullDrill())).toEqual([]);
+  });
+
+  it('rejects more steps than a drill may have', () => {
+    const steps: DrillStep[] = [...fullDrill(), { id: 'extra', type: 'shot' }];
+
+    expect(drillDraftProblems('Long', steps)).toEqual(['too-many-steps']);
   });
 });

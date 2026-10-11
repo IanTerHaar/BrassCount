@@ -18,6 +18,7 @@ import { SequenceEditorScreen } from '../src/screens/SequenceEditorScreen';
 import {
   DrillStorageError,
   DrillStorageService,
+  deleteDrillById,
   loadDrillById,
   loadDrills,
   saveDrill,
@@ -828,16 +829,280 @@ describe('SequenceEditorScreen', () => {
       expect(first(tree, 'btn-save-drill').props.label).toBe('Create drill');
     });
 
-    it('leaves the editor without storing anything yet', async () => {
+    it('says a drill with steps still needs a name', async () => {
+      const { tree } = await renderEditor();
+
+      await addSteps(tree, 1);
+
+      expect(textOf(tree, 'text-save-hint')).toBe('Name the drill to save.');
+    });
+
+    it('says a named drill still needs a step', async () => {
+      const { tree } = await renderEditor();
+
+      await type(tree, 'input-drill-name', 'Bill Drill');
+
+      expect(textOf(tree, 'text-save-hint')).toBe(
+        'Add at least one step to save.',
+      );
+    });
+
+    it('stores nothing when pressed before the drill is ready', async () => {
       const { tree, currentRoute } = await renderEditor();
       await type(tree, 'input-drill-name', 'Bill Drill');
-      await addSteps(tree, 2);
+
+      await press(tree, 'btn-save-drill');
+      await settle();
+
+      expect(currentRoute()?.name).toBe('SequenceEditor');
+      expect(await loadDrills()).toEqual([]);
+    });
+  });
+
+  describe('creating a drill', () => {
+    /** Name a new drill and give it a draw and two shots. */
+    const buildBillDrill = async (tree: ReactTestRenderer, name: string) => {
+      await type(tree, 'input-drill-name', name);
+      await addSteps(tree, 3);
+    };
+
+    it('stores it and goes back to the drills', async () => {
+      const { tree, currentRoute } = await renderEditor();
+      await buildBillDrill(tree, 'Bill Drill');
+      await choosePreset(tree, 0, '1.5');
+      await typeCustomPar(tree, 1, '0.25');
+      await press(tree, 'btn-par-custom-set');
 
       await press(tree, 'btn-save-drill');
       await settle();
 
       expect(currentRoute()?.name).toBe('Drills');
+      expect(await loadDrills()).toMatchObject([
+        {
+          name: 'Bill Drill',
+          steps: [
+            { type: 'draw', par: 1.5 },
+            { type: 'shot', par: 0.25 },
+            { type: 'shot' },
+          ],
+        },
+      ]);
+    });
+
+    it('works out the total par and the shot count', async () => {
+      const { tree } = await renderEditor();
+      await buildBillDrill(tree, 'Bill Drill');
+      await choosePreset(tree, 0, '1.5');
+      await choosePreset(tree, 1, '0.5');
+      await choosePreset(tree, 2, '0.5');
+
+      await press(tree, 'btn-save-drill');
+      await settle();
+
+      const [stored] = await loadDrills();
+      expect(stored.totalPar).toBe(2.5);
+      expect(stored.shotCount).toBe(2);
+    });
+
+    it('leaves the total par out when a step is untimed', async () => {
+      const { tree } = await renderEditor();
+      await buildBillDrill(tree, 'Bill Drill');
+      await choosePreset(tree, 0, '1.5');
+
+      await press(tree, 'btn-save-drill');
+      await settle();
+
+      const [stored] = await loadDrills();
+      expect(stored.totalPar).toBeNull();
+      expect(stored.shotCount).toBe(2);
+    });
+
+    it('stores the name without the spaces around it', async () => {
+      const { tree } = await renderEditor();
+      await buildBillDrill(tree, '  Bill Drill ');
+
+      await press(tree, 'btn-save-drill');
+      await settle();
+
+      expect((await loadDrills()).map(drill => drill.name)).toEqual([
+        'Bill Drill',
+      ]);
+    });
+
+    it('tells a screen reader the drill was created', async () => {
+      const announce = jest
+        .spyOn(AccessibilityInfo, 'announceForAccessibility')
+        .mockImplementation(() => {});
+      const { tree } = await renderEditor();
+      await buildBillDrill(tree, 'Bill Drill');
+
+      await press(tree, 'btn-save-drill');
+      await settle();
+
+      expect(announce).toHaveBeenLastCalledWith('Created Bill Drill');
+    });
+
+    it('reads "Saving…" and cannot be pressed while it is stored', async () => {
+      jest
+        .spyOn(DrillStorageService, 'save')
+        .mockImplementationOnce(() => new Promise<Drill>(() => {}));
+      const { tree, currentRoute } = await renderEditor();
+      await buildBillDrill(tree, 'Bill Drill');
+
+      await press(tree, 'btn-save-drill');
+
+      expect(first(tree, 'btn-save-drill').props.label).toBe('Saving…');
+      expect(isDisabled(tree, 'btn-save-drill')).toBe(true);
+      expect(currentRoute()?.name).toBe('SequenceEditor');
+    });
+
+    it('takes no more changes once it is being stored', async () => {
+      jest
+        .spyOn(DrillStorageService, 'save')
+        .mockImplementationOnce(() => new Promise<Drill>(() => {}));
+      const { tree } = await renderEditor();
+      await buildBillDrill(tree, 'Bill Drill');
+      await press(tree, 'btn-save-drill');
+
+      await press(tree, 'btn-add-step');
+      await press(tree, 'btn-remove-step-0');
+      await chooseType(tree, 1, 'reload');
+
+      expect(first(tree, 'input-drill-name').props.editable).toBe(false);
+      expect(stepTypes(tree)).toEqual(['Draw', 'Shot', 'Shot']);
+    });
+
+    it('stores one drill when the button is pressed twice', async () => {
+      const { tree } = await renderEditor();
+      await buildBillDrill(tree, 'Bill Drill');
+      const { onPress } = withProp(tree, 'btn-save-drill', 'onPress').props;
+
+      // Both from the same render, as two taps before a redraw would be.
+      await act(async () => {
+        onPress();
+        onPress();
+      });
+      await settle();
+
+      expect(await loadDrills()).toHaveLength(1);
+    });
+  });
+
+  describe('a save that fails', () => {
+    const buildDrill = async (tree: ReactTestRenderer) => {
+      await type(tree, 'input-drill-name', 'Bill Drill');
+      await addSteps(tree, 2);
+    };
+
+    it('stays on the editor and says the drill was not saved', async () => {
+      jest
+        .spyOn(DrillStorageService, 'save')
+        .mockRejectedValueOnce(
+          new DrillStorageError('Failed to save drill', 'STORAGE_FAILURE'),
+        );
+      const { tree, currentRoute } = await renderEditor();
+      await buildDrill(tree);
+
+      await press(tree, 'btn-save-drill');
+      await settle();
+
+      expect(currentRoute()?.name).toBe('SequenceEditor');
+      expect(textOf(tree, 'text-drill-save-error')).toBe(
+        'Could not save the drill. Try again.',
+      );
       expect(await loadDrills()).toEqual([]);
+    });
+
+    it('keeps what was built and saves it on the next try', async () => {
+      jest
+        .spyOn(DrillStorageService, 'save')
+        .mockRejectedValueOnce(
+          new DrillStorageError('Failed to save drill', 'STORAGE_FAILURE'),
+        );
+      const { tree, currentRoute } = await renderEditor();
+      await buildDrill(tree);
+      await press(tree, 'btn-save-drill');
+      await settle();
+
+      expect(first(tree, 'input-drill-name').props.value).toBe('Bill Drill');
+      expect(stepTypes(tree)).toEqual(['Draw', 'Shot']);
+      expect(first(tree, 'btn-save-drill').props.label).toBe('Create drill');
+      expect(isDisabled(tree, 'btn-save-drill')).toBe(false);
+
+      await press(tree, 'btn-save-drill');
+      await settle();
+
+      expect(currentRoute()?.name).toBe('Drills');
+      expect((await loadDrills()).map(drill => drill.name)).toEqual([
+        'Bill Drill',
+      ]);
+    });
+
+    it('takes the message away while it tries again', async () => {
+      jest
+        .spyOn(DrillStorageService, 'save')
+        .mockRejectedValueOnce(
+          new DrillStorageError('Failed to save drill', 'STORAGE_FAILURE'),
+        )
+        .mockImplementationOnce(() => new Promise<Drill>(() => {}));
+      const { tree } = await renderEditor();
+      await buildDrill(tree);
+      await press(tree, 'btn-save-drill');
+      await settle();
+
+      await press(tree, 'btn-save-drill');
+
+      expect(has(tree, 'text-drill-save-error')).toBe(false);
+    });
+
+    it('says to check the drill when the service turns it down', async () => {
+      jest
+        .spyOn(DrillStorageService, 'save')
+        .mockRejectedValueOnce(
+          new DrillStorageError('Step 1 has an unknown type', 'INVALID_INPUT'),
+        );
+      const { tree } = await renderEditor();
+      await buildDrill(tree);
+
+      await press(tree, 'btn-save-drill');
+      await settle();
+
+      expect(textOf(tree, 'text-drill-save-error')).toBe(
+        'This drill cannot be saved as it is. Check its name and steps, then try again.',
+      );
+    });
+
+    it('does not show the service’s own wording', async () => {
+      jest
+        .spyOn(DrillStorageService, 'save')
+        .mockRejectedValueOnce(
+          new DrillStorageError('Failed to save drill', 'STORAGE_FAILURE'),
+        );
+      const { tree } = await renderEditor();
+      await buildDrill(tree);
+
+      await press(tree, 'btn-save-drill');
+      await settle();
+
+      expect(allText(tree)).not.toContain('Failed to save drill');
+    });
+
+    it('announces the failure to a screen reader', async () => {
+      jest
+        .spyOn(DrillStorageService, 'save')
+        .mockRejectedValueOnce(
+          new DrillStorageError('Failed to save drill', 'STORAGE_FAILURE'),
+        );
+      const { tree } = await renderEditor();
+      await buildDrill(tree);
+
+      await press(tree, 'btn-save-drill');
+      await settle();
+
+      expect(
+        withProp(tree, 'text-drill-save-error', 'accessibilityLiveRegion').props
+          .accessibilityLiveRegion,
+      ).toBe('polite');
     });
   });
 
@@ -910,15 +1175,118 @@ describe('SequenceEditorScreen', () => {
       expect(stepPars(tree)).toEqual(['2.00s', '0.25s', '+ par']);
     });
 
-    it('does not change the stored drill', async () => {
+    it('leaves the stored drill alone when left without saving', async () => {
       const drill = await saveDrill(BILL_DRILL);
-      const { tree } = await renderEditor(drill.id);
+      const { tree, currentRoute } = await renderEditor(drill.id);
 
       await type(tree, 'input-drill-name', 'Renamed');
       await press(tree, 'btn-remove-step-0');
+      await press(tree, 'btn-back');
+      await settle();
+
+      expect(currentRoute()?.name).toBe('Drills');
+      expect(await loadDrillById(drill.id)).toEqual(drill);
+    });
+
+    it('saves the changes to that drill and goes back', async () => {
+      const drill = await saveDrill(BILL_DRILL);
+      const { tree, currentRoute } = await renderEditor(drill.id);
+
+      await type(tree, 'input-drill-name', 'Bill Drill, slow');
+      await press(tree, 'btn-remove-step-2');
+      await choosePreset(tree, 0, '2');
       await press(tree, 'btn-save-drill');
       await settle();
 
+      expect(currentRoute()?.name).toBe('Drills');
+      const stored = await loadDrills();
+      expect(stored).toHaveLength(1);
+      expect(stored[0]).toMatchObject({
+        id: drill.id,
+        name: 'Bill Drill, slow',
+        steps: [
+          { id: drill.steps[0].id, type: 'draw', par: 2 },
+          { id: drill.steps[1].id, type: 'shot', par: 0.25 },
+        ],
+        totalPar: 2.25,
+        shotCount: 1,
+        createdAt: drill.createdAt,
+      });
+    });
+
+    it('drops the total par once a step is left untimed', async () => {
+      const drill = await saveDrill(BILL_DRILL);
+      const { tree } = await renderEditor(drill.id);
+
+      await addSteps(tree, 1);
+      await press(tree, 'btn-save-drill');
+      await settle();
+
+      const stored = await loadDrillById(drill.id);
+      expect(stored?.totalPar).toBeNull();
+      expect(stored?.shotCount).toBe(3);
+    });
+
+    it('tells a screen reader the drill was saved', async () => {
+      const drill = await saveDrill(BILL_DRILL);
+      const announce = jest
+        .spyOn(AccessibilityInfo, 'announceForAccessibility')
+        .mockImplementation(() => {});
+      const { tree } = await renderEditor(drill.id);
+
+      await press(tree, 'btn-save-drill');
+      await settle();
+
+      expect(announce).toHaveBeenLastCalledWith('Saved Bill Drill');
+    });
+
+    it('reads "Saving…" while the changes are stored', async () => {
+      const drill = await saveDrill(BILL_DRILL);
+      jest
+        .spyOn(DrillStorageService, 'update')
+        .mockImplementationOnce(() => new Promise<Drill>(() => {}));
+      const { tree } = await renderEditor(drill.id);
+
+      await press(tree, 'btn-save-drill');
+
+      expect(first(tree, 'btn-save-drill').props.label).toBe('Saving…');
+      expect(isDisabled(tree, 'btn-save-drill')).toBe(true);
+    });
+
+    it('says so when the drill was deleted before it was saved', async () => {
+      const drill = await saveDrill(BILL_DRILL);
+      const { tree, currentRoute } = await renderEditor(drill.id);
+      await deleteDrillById(drill.id);
+
+      await type(tree, 'input-drill-name', 'Renamed');
+      await press(tree, 'btn-save-drill');
+      await settle();
+
+      expect(currentRoute()?.name).toBe('SequenceEditor');
+      expect(textOf(tree, 'text-drill-save-error')).toBe(
+        'This drill is no longer saved on this device, so it cannot be changed.',
+      );
+      expect(await loadDrills()).toEqual([]);
+    });
+
+    it('says the changes were not saved when storage fails', async () => {
+      const drill = await saveDrill(BILL_DRILL);
+      jest
+        .spyOn(DrillStorageService, 'update')
+        .mockRejectedValueOnce(
+          new DrillStorageError('Failed to update drill', 'STORAGE_FAILURE'),
+        );
+      const { tree, currentRoute } = await renderEditor(drill.id);
+
+      await type(tree, 'input-drill-name', 'Renamed');
+      await press(tree, 'btn-save-drill');
+      await settle();
+
+      expect(currentRoute()?.name).toBe('SequenceEditor');
+      expect(textOf(tree, 'text-drill-save-error')).toBe(
+        'Could not save your changes. Try again.',
+      );
+      expect(first(tree, 'input-drill-name').props.value).toBe('Renamed');
       expect(await loadDrillById(drill.id)).toEqual(drill);
     });
 

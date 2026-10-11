@@ -33,10 +33,20 @@ import { SectionHeader } from '@components/SectionHeader';
 import { Select, type SelectOption } from '@components/Select';
 import { TextField } from '@components/TextField';
 import { Typography } from '@components/Typography';
-import { useDrillEditor, type DrillEditorStatus } from '@hooks/useDrillEditor';
+import {
+  useDrillEditor,
+  type DrillEditorStatus,
+  type DrillSaveFailure,
+  type DrillSaveState,
+} from '@hooks/useDrillEditor';
 import { useThemedStyles } from '@hooks/useTheme';
 import { countShots, stepLabel, stepTypeLabel, totalPar } from '@utils/drill';
-import { canAddStep, nextStepType, stepTypeChoices } from '@utils/drillDraft';
+import {
+  canAddStep,
+  nextStepType,
+  stepTypeChoices,
+  type DrillDraftProblem,
+} from '@utils/drillDraft';
 import { formatSeconds, pluralize, spokenSeconds } from '@utils/format';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -85,6 +95,49 @@ const describeSteps = (steps: readonly DrillStep[]): string => {
   )}`;
   const par = totalPar(steps);
   return par === null ? counts : `${counts} · Par ${formatSeconds(par)}`;
+};
+
+/**
+ * What the draft still needs before it can be saved, for the line under
+ * the save button. The two a shooter meets building a drill — no name, no
+ * steps — are worded together when both apply.
+ */
+const saveHint = (problems: readonly DrillDraftProblem[]): string => {
+  const needsName = problems.includes('name-missing');
+  const needsStep = problems.includes('no-steps');
+
+  if (needsName && needsStep) {
+    return 'Name the drill and add at least one step to save.';
+  }
+  if (needsName) {
+    return 'Name the drill to save.';
+  }
+  if (needsStep) {
+    return 'Add at least one step to save.';
+  }
+  if (problems.includes('name-too-long')) {
+    return `Use ${MAX_DRILL_NAME_LENGTH} characters or fewer for the name.`;
+  }
+  return `A drill can have at most ${MAX_DRILL_STEPS} steps.`;
+};
+
+/**
+ * Words for a failed save. The service's own message is written for a
+ * developer, so the shooter is only told which kind of failure it was.
+ */
+const saveFailureMessage = (
+  failure: DrillSaveFailure,
+  editing: boolean,
+): string => {
+  if (failure === 'invalid') {
+    return 'This drill cannot be saved as it is. Check its name and steps, then try again.';
+  }
+  if (failure === 'missing') {
+    return 'This drill is no longer saved on this device, so it cannot be changed.';
+  }
+  return editing
+    ? 'Could not save your changes. Try again.'
+    : 'Could not save the drill. Try again.';
 };
 
 /** The whole sequence in one sentence, for the Preview card's reader label. */
@@ -400,6 +453,64 @@ const EditorUnavailable = ({
   );
 };
 
+type SaveFooterProps = {
+  /** Whether a saved drill is being changed, not a new one created. */
+  editing: boolean;
+  problems: readonly DrillDraftProblem[];
+  canSave: boolean;
+  saveState: DrillSaveState;
+  saveFailure: DrillSaveFailure | null;
+  onSave: () => void;
+};
+
+/**
+ * The save button, with why the last save failed above it and what the
+ * draft still needs below it.
+ */
+const SaveFooter = ({
+  editing,
+  problems,
+  canSave,
+  saveState,
+  saveFailure,
+  onSave,
+}: SaveFooterProps) => {
+  const styles = useThemedStyles(createStyles);
+  const idleLabel = editing ? 'Save changes' : 'Create drill';
+
+  return (
+    <View style={styles.footer}>
+      {saveFailure === null ? null : (
+        <Typography
+          variant="caption"
+          color="danger"
+          align="center"
+          accessibilityLiveRegion="polite"
+          testID="text-drill-save-error"
+        >
+          {saveFailureMessage(saveFailure, editing)}
+        </Typography>
+      )}
+      <Button
+        label={saveState === 'idle' ? idleLabel : 'Saving…'}
+        onPress={onSave}
+        disabled={!canSave}
+        testID="btn-save-drill"
+      />
+      {problems.length > 0 ? (
+        <Typography
+          variant="caption"
+          color="textTertiary"
+          align="center"
+          testID="text-save-hint"
+        >
+          {saveHint(problems)}
+        </Typography>
+      ) : null}
+    </View>
+  );
+};
+
 type DrillEditorProps = {
   /** Id of the saved drill to edit; leave off to build a new one. */
   drillId?: string;
@@ -413,12 +524,17 @@ const DrillEditor = ({ drillId }: DrillEditorProps) => {
     status,
     name,
     steps,
+    problems,
+    canSave,
+    saveState,
+    saveFailure,
     setName,
     addStep,
     removeStep,
     changeStepType,
     setStepPar,
     reload,
+    save,
   } = useDrillEditor(drillId);
   // The step whose par is being picked. An id, not a position, so it
   // still points at the same step whatever happens to the list.
@@ -438,6 +554,22 @@ const DrillEditor = ({ drillId }: DrillEditorProps) => {
   const editing = drillId !== undefined;
   const title = editing ? 'Edit drill' : 'New drill';
 
+  const saveAndLeave = async () => {
+    // `save` settles a failure into `saveFailure` and resolves to
+    // `null`, as it does when the editor was closed before the write
+    // landed — going back then would pop the screen underneath.
+    const drill = await save();
+    if (drill === null) {
+      return;
+    }
+    // The editor, and the reader's focus with it, is about to go: say
+    // what happened to the drill.
+    AccessibilityInfo.announceForAccessibility(
+      `${editing ? 'Saved' : 'Created'} ${drill.name}`,
+    );
+    navigation.goBack();
+  };
+
   if (status !== 'ready') {
     return (
       <Screen
@@ -456,7 +588,6 @@ const DrillEditor = ({ drillId }: DrillEditorProps) => {
   }
 
   const parPosition = steps.findIndex(step => step.id === parStepId);
-  const canSave = name.trim().length > 0 && steps.length > 0;
   const hasRoom = canAddStep(steps);
 
   return (
@@ -478,6 +609,7 @@ const DrillEditor = ({ drillId }: DrillEditorProps) => {
           onChangeText={setName}
           placeholder="e.g. Bill Drill"
           maxLength={MAX_DRILL_NAME_LENGTH}
+          editable={saveState === 'idle'}
           testID="input-drill-name"
         />
       </Card>
@@ -548,21 +680,14 @@ const DrillEditor = ({ drillId }: DrillEditorProps) => {
 
       {steps.length > 0 ? <StepPreview steps={steps} /> : null}
 
-      <View style={styles.footer}>
-        {/* Not wired to storage yet: the button only leaves the editor,
-            and the draft goes with it. */}
-        <Button
-          label={editing ? 'Save changes' : 'Create drill'}
-          onPress={navigation.goBack}
-          disabled={!canSave}
-          testID="btn-save-drill"
-        />
-        {!canSave ? (
-          <Typography variant="caption" color="textTertiary" align="center">
-            Name the drill and add at least one step to save.
-          </Typography>
-        ) : null}
-      </View>
+      <SaveFooter
+        editing={editing}
+        problems={problems}
+        canSave={canSave}
+        saveState={saveState}
+        saveFailure={saveFailure}
+        onSave={saveAndLeave}
+      />
 
       <ParPickerSheet
         visible={parPosition >= 0}
@@ -584,7 +709,9 @@ const DrillEditor = ({ drillId }: DrillEditorProps) => {
  * Create / edit a drill: its name and its ordered steps, each with a type
  * and an optional par, plus a live preview of the sequence. Opened with
  * the id of a saved drill it starts from that drill; without one it
- * starts empty. The draft is local state only — nothing is saved yet.
+ * starts empty. The save button stores the draft through
+ * `DrillStorageService` — a new drill is created, an opened one updated —
+ * and goes back; leaving any other way drops the draft.
  */
 export const SequenceEditorScreen = () => {
   const route = useRoute<EditorRoute>();
