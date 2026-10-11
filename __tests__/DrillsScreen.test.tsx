@@ -1,9 +1,16 @@
+import { AccessibilityInfo } from 'react-native';
+
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import {
   NavigationContainer,
   createNavigationContainerRef,
 } from '@react-navigation/native';
+import { GestureHandlerRootView, State } from 'react-native-gesture-handler';
+import {
+  fireGestureHandler,
+  getByGestureTestId,
+} from 'react-native-gesture-handler/jest-utils';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import {
   act,
@@ -103,15 +110,18 @@ const mountScreen = (): Harness => {
   let tree: ReactTestRenderer | undefined;
   act(() => {
     tree = create(
-      <SafeAreaProvider initialMetrics={metrics}>
-        <NavigationContainer ref={navigationRef}>
-          <Tab.Navigator screenOptions={{ headerShown: false }}>
-            <Tab.Screen name="Drills" component={DrillsScreen} />
-            <Tab.Screen name="Elsewhere" component={Blank} />
-            <Tab.Screen name="SequenceEditor" component={Blank} />
-          </Tab.Navigator>
-        </NavigationContainer>
-      </SafeAreaProvider>,
+      // The drill rows swipe, and a gesture needs the root view `App` mounts.
+      <GestureHandlerRootView>
+        <SafeAreaProvider initialMetrics={metrics}>
+          <NavigationContainer ref={navigationRef}>
+            <Tab.Navigator screenOptions={{ headerShown: false }}>
+              <Tab.Screen name="Drills" component={DrillsScreen} />
+              <Tab.Screen name="Elsewhere" component={Blank} />
+              <Tab.Screen name="SequenceEditor" component={Blank} />
+            </Tab.Navigator>
+          </NavigationContainer>
+        </SafeAreaProvider>
+      </GestureHandlerRootView>,
     );
   });
   if (tree === undefined) {
@@ -178,6 +188,36 @@ const press = async (tree: ReactTestRenderer, testID: string) => {
   });
   await settle();
 };
+
+/**
+ * Further than a row's Delete action is wide at any font size, so the row
+ * ends up fully open (leftward) or fully closed (rightward).
+ */
+const FULL_SWIPE = 400;
+
+/** Drag the drill's row sideways by `translationX` and let go. */
+const swipe = async (id: string, translationX: number, velocityX = 0) => {
+  await act(async () => {
+    fireGestureHandler(getByGestureTestId(`swipe-drill-${id}`), [
+      { state: State.BEGAN },
+      { state: State.ACTIVE },
+      { translationX, velocityX },
+      { state: State.END, translationX, velocityX },
+    ]);
+  });
+};
+
+/**
+ * Whether the drill's row rests open. Its Delete action is kept from a
+ * screen reader until it does.
+ */
+const isSwipedOpen = (tree: ReactTestRenderer, id: string): boolean =>
+  byTestId(tree, `btn-delete-drill-${id}`)[0].props
+    .importantForAccessibility === 'yes';
+
+/** Ids of the drills in storage. */
+const storedIds = async (): Promise<string[]> =>
+  (await DrillStorageService.loadAll()).map(drill => drill.id);
 
 describe('DrillsScreen', () => {
   beforeEach(async () => {
@@ -526,6 +566,325 @@ describe('DrillsScreen', () => {
       await goTo('Drills');
 
       expect(rowOrder(tree)).toEqual([second.id, first.id]);
+    });
+  });
+
+  describe('swiping a drill row', () => {
+    it('keeps the Delete action out of reach until the row is swiped', async () => {
+      const drill = await seedDrill(BILL_DRILL, '2026-09-01T10:00:00.000Z');
+
+      const { tree } = await renderScreen();
+
+      expect(isSwipedOpen(tree, drill.id)).toBe(false);
+    });
+
+    it('opens the row when it is swiped left', async () => {
+      const drill = await seedDrill(BILL_DRILL, '2026-09-01T10:00:00.000Z');
+      const { tree } = await renderScreen();
+
+      await swipe(drill.id, -FULL_SWIPE);
+
+      expect(isSwipedOpen(tree, drill.id)).toBe(true);
+    });
+
+    it('leaves the row closed after a short swipe', async () => {
+      const drill = await seedDrill(BILL_DRILL, '2026-09-01T10:00:00.000Z');
+      const { tree } = await renderScreen();
+
+      await swipe(drill.id, -20);
+
+      expect(isSwipedOpen(tree, drill.id)).toBe(false);
+    });
+
+    it('closes an open row when it is swiped back', async () => {
+      const drill = await seedDrill(BILL_DRILL, '2026-09-01T10:00:00.000Z');
+      const { tree } = await renderScreen();
+      await swipe(drill.id, -FULL_SWIPE);
+
+      await swipe(drill.id, FULL_SWIPE);
+
+      expect(isSwipedOpen(tree, drill.id)).toBe(false);
+    });
+
+    it('closes an open row on a tap instead of opening the editor', async () => {
+      const drill = await seedDrill(BILL_DRILL, '2026-09-01T10:00:00.000Z');
+      const { tree, currentRoute } = await renderScreen();
+      await swipe(drill.id, -FULL_SWIPE);
+
+      await press(tree, `row-drill-${drill.id}`);
+
+      expect(isSwipedOpen(tree, drill.id)).toBe(false);
+      expect(currentRoute()).toMatchObject({ name: 'Drills' });
+
+      await press(tree, `row-drill-${drill.id}`);
+
+      expect(currentRoute()).toMatchObject({
+        name: 'SequenceEditor',
+        params: { id: drill.id },
+      });
+    });
+
+    it('keeps one row open at a time', async () => {
+      const first = await seedDrill(BILL_DRILL, '2026-09-01T10:00:00.000Z');
+      const second = await seedDrill(MOZAMBIQUE, '2026-09-02T10:00:00.000Z');
+      const { tree } = await renderScreen();
+      await swipe(first.id, -FULL_SWIPE);
+
+      await swipe(second.id, -FULL_SWIPE);
+
+      expect(isSwipedOpen(tree, first.id)).toBe(false);
+      expect(isSwipedOpen(tree, second.id)).toBe(true);
+    });
+
+    it('puts an open row away when the screen is left', async () => {
+      const drill = await seedDrill(BILL_DRILL, '2026-09-01T10:00:00.000Z');
+      const { tree, goTo } = await renderScreen();
+      await swipe(drill.id, -FULL_SWIPE);
+
+      await goTo('Elsewhere');
+      await goTo('Drills');
+
+      expect(isSwipedOpen(tree, drill.id)).toBe(false);
+    });
+  });
+
+  describe('deleting a drill', () => {
+    const SHEET = 'sheet-delete-drill';
+
+    /** Whether the confirmation sheet is up. */
+    const isAsking = (tree: ReactTestRenderer): boolean =>
+      has(tree, `${SHEET}-confirm`);
+
+    /** Swipe the drill's row open and press its Delete action. */
+    const askToDelete = async (tree: ReactTestRenderer, id: string) => {
+      await swipe(id, -FULL_SWIPE);
+      await press(tree, `btn-delete-drill-${id}`);
+    };
+
+    it('asks before deleting, naming the drill', async () => {
+      const drill = await seedDrill(BILL_DRILL, '2026-09-01T10:00:00.000Z');
+      const { tree } = await renderScreen();
+      expect(isAsking(tree)).toBe(false);
+
+      await askToDelete(tree, drill.id);
+
+      expect(textsOf(tree, SHEET)).toContain('Delete “Bill Drill”?');
+      expect(rowOrder(tree)).toEqual([drill.id]);
+      expect(await storedIds()).toEqual([drill.id]);
+    });
+
+    it('names the drill in what a screen reader hears for Delete', async () => {
+      const drill = await seedDrill(BILL_DRILL, '2026-09-01T10:00:00.000Z');
+
+      const { tree } = await renderScreen();
+
+      expect(
+        byTestId(tree, `btn-delete-drill-${drill.id}`)[0].props
+          .accessibilityLabel,
+      ).toBe('Delete Bill Drill');
+    });
+
+    it('keeps the drill when the confirmation is cancelled', async () => {
+      const drill = await seedDrill(BILL_DRILL, '2026-09-01T10:00:00.000Z');
+      const { tree } = await renderScreen();
+      await askToDelete(tree, drill.id);
+
+      await press(tree, `${SHEET}-cancel`);
+
+      expect(isAsking(tree)).toBe(false);
+      expect(rowOrder(tree)).toEqual([drill.id]);
+      expect(await storedIds()).toEqual([drill.id]);
+    });
+
+    it('removes the drill from the list and from storage once confirmed', async () => {
+      const kept = await seedDrill(BILL_DRILL, '2026-09-01T10:00:00.000Z');
+      const deleted = await seedDrill(MOZAMBIQUE, '2026-09-02T10:00:00.000Z');
+      const { tree } = await renderScreen();
+      await askToDelete(tree, deleted.id);
+
+      await press(tree, `${SHEET}-confirm`);
+
+      expect(isAsking(tree)).toBe(false);
+      expect(rowOrder(tree)).toEqual([kept.id]);
+      expect(textsOf(tree, 'header-saved-drills')).toEqual(['SAVED · 1']);
+      expect(await storedIds()).toEqual([kept.id]);
+    });
+
+    it('shows the empty state after the last drill is deleted', async () => {
+      const drill = await seedDrill(BILL_DRILL, '2026-09-01T10:00:00.000Z');
+      const { tree } = await renderScreen();
+      await askToDelete(tree, drill.id);
+
+      await press(tree, `${SHEET}-confirm`);
+
+      expect(has(tree, 'state-drills-empty')).toBe(true);
+      expect(textsOf(tree, 'header-saved-drills')).toEqual(['SAVED · 0']);
+    });
+
+    it('tells a screen reader the drill was deleted', async () => {
+      const drill = await seedDrill(BILL_DRILL, '2026-09-01T10:00:00.000Z');
+      const announce = jest
+        .spyOn(AccessibilityInfo, 'announceForAccessibility')
+        .mockImplementation(() => {});
+      const { tree } = await renderScreen();
+      await askToDelete(tree, drill.id);
+
+      await press(tree, `${SHEET}-confirm`);
+
+      expect(announce).toHaveBeenCalledWith('Deleted Bill Drill');
+    });
+
+    it('offers a screen reader a delete action on the row', async () => {
+      const drill = await seedDrill(BILL_DRILL, '2026-09-01T10:00:00.000Z');
+      const { tree } = await renderScreen();
+      const row = byTestId(tree, `row-drill-${drill.id}`)[0];
+
+      expect(row.props.accessibilityActions).toEqual([
+        { name: 'delete', label: 'Delete drill' },
+      ]);
+
+      await act(async () => {
+        row.props.onAccessibilityAction({
+          nativeEvent: { actionName: 'delete' },
+        });
+      });
+
+      expect(textsOf(tree, SHEET)).toContain('Delete “Bill Drill”?');
+      expect(await storedIds()).toEqual([drill.id]);
+    });
+
+    it('leaves the sheet up and deletes once while the delete is running', async () => {
+      const drill = await seedDrill(BILL_DRILL, '2026-09-01T10:00:00.000Z');
+      let finish: () => void = () => {};
+      const deleteById = jest
+        .spyOn(DrillStorageService, 'deleteById')
+        .mockImplementationOnce(
+          () =>
+            new Promise<void>(resolve => {
+              finish = resolve;
+            }),
+        );
+      const { tree } = await renderScreen();
+      await askToDelete(tree, drill.id);
+
+      await press(tree, `${SHEET}-confirm`);
+      await press(tree, `${SHEET}-confirm`);
+      await press(tree, `${SHEET}-cancel`);
+
+      expect(deleteById).toHaveBeenCalledTimes(1);
+      expect(textsOf(tree, `${SHEET}-confirm`)).toEqual(['Deleting…']);
+      expect(
+        byTestId(tree, `${SHEET}-confirm`).some(
+          node => node.props.accessibilityState?.disabled === true,
+        ),
+      ).toBe(true);
+      expect(rowOrder(tree)).toEqual([drill.id]);
+
+      await act(async () => {
+        finish();
+      });
+      await settle();
+
+      expect(isAsking(tree)).toBe(false);
+      expect(rowOrder(tree)).toEqual([]);
+    });
+
+    describe('when the drill cannot be deleted', () => {
+      const failure = () =>
+        new DrillStorageError('Failed to delete drill', 'STORAGE_FAILURE');
+
+      it('keeps the drill and says so, without the service’s wording', async () => {
+        const drill = await seedDrill(BILL_DRILL, '2026-09-01T10:00:00.000Z');
+        jest
+          .spyOn(DrillStorageService, 'deleteById')
+          .mockRejectedValueOnce(failure());
+        const { tree } = await renderScreen();
+        await askToDelete(tree, drill.id);
+
+        await press(tree, `${SHEET}-confirm`);
+
+        expect(textsOf(tree, `${SHEET}-error`)).toEqual([
+          'Could not delete Bill Drill. Try again.',
+        ]);
+        expect(textsOf(tree, SHEET)).not.toContain('Failed to delete drill');
+        expect(rowOrder(tree)).toEqual([drill.id]);
+        expect(await storedIds()).toEqual([drill.id]);
+      });
+
+      it('announces the failure to a screen reader', async () => {
+        const drill = await seedDrill(BILL_DRILL, '2026-09-01T10:00:00.000Z');
+        jest
+          .spyOn(DrillStorageService, 'deleteById')
+          .mockRejectedValueOnce(failure());
+        const { tree } = await renderScreen();
+        await askToDelete(tree, drill.id);
+
+        await press(tree, `${SHEET}-confirm`);
+
+        const [sheet] = byTestId(tree, SHEET);
+        const announced = sheet.findAllByProps({
+          accessibilityLiveRegion: 'polite',
+        });
+        expect(announced.flatMap(textsUnder)).toContain(
+          'Could not delete Bill Drill. Try again.',
+        );
+      });
+
+      it('deletes the drill when confirmed again', async () => {
+        const drill = await seedDrill(BILL_DRILL, '2026-09-01T10:00:00.000Z');
+        jest
+          .spyOn(DrillStorageService, 'deleteById')
+          .mockRejectedValueOnce(failure());
+        const { tree } = await renderScreen();
+        await askToDelete(tree, drill.id);
+        await press(tree, `${SHEET}-confirm`);
+
+        await press(tree, `${SHEET}-confirm`);
+
+        expect(isAsking(tree)).toBe(false);
+        expect(rowOrder(tree)).toEqual([]);
+        expect(await storedIds()).toEqual([]);
+      });
+
+      it('forgets the failure once the sheet is closed', async () => {
+        const drill = await seedDrill(BILL_DRILL, '2026-09-01T10:00:00.000Z');
+        jest
+          .spyOn(DrillStorageService, 'deleteById')
+          .mockRejectedValueOnce(failure());
+        const { tree } = await renderScreen();
+        await askToDelete(tree, drill.id);
+        await press(tree, `${SHEET}-confirm`);
+
+        await press(tree, `${SHEET}-cancel`);
+        await press(tree, `btn-delete-drill-${drill.id}`);
+
+        expect(has(tree, `${SHEET}-error`)).toBe(false);
+      });
+    });
+
+    it('does not bring the drill back when an earlier read answers late', async () => {
+      const kept = await seedDrill(BILL_DRILL, '2026-09-01T10:00:00.000Z');
+      const deleted = await seedDrill(MOZAMBIQUE, '2026-09-02T10:00:00.000Z');
+      const { tree, goTo } = await renderScreen();
+      await goTo('Elsewhere');
+      // Coming back starts a read that is still out when the delete lands.
+      let answer: (drills: Drill[]) => void = () => {};
+      jest.spyOn(DrillStorageService, 'loadAll').mockImplementationOnce(
+        () =>
+          new Promise<Drill[]>(resolve => {
+            answer = resolve;
+          }),
+      );
+      await goTo('Drills');
+      await askToDelete(tree, deleted.id);
+      await press(tree, `${SHEET}-confirm`);
+
+      await act(async () => {
+        answer([deleted, kept]);
+      });
+      await settle();
+
+      expect(rowOrder(tree)).toEqual([kept.id]);
     });
   });
 });

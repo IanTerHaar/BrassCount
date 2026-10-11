@@ -161,6 +161,8 @@ export type SemanticColors = {
   textTertiary: string;
   textOnPrimary: string;
   textOnWarning: string;
+  /** Text on a `danger` fill, e.g. a destructive button. */
+  textOnDanger: string;
   primary: string;
   primaryMuted: string;
   /** Tinted fill for chips/badges that carry `primary` text. */
@@ -183,6 +185,7 @@ const lightColors: SemanticColors = {
   textTertiary: palette.grey400,
   textOnPrimary: palette.white,
   textOnWarning: palette.grey900,
+  textOnDanger: palette.white,
   primary: palette.brass400,
   primaryMuted: palette.brass700,
   primarySoft: palette.brassWash,
@@ -203,6 +206,7 @@ const darkColors: SemanticColors = {
   textTertiary: palette.grey500,
   textOnPrimary: palette.grey950,
   textOnWarning: palette.grey950,
+  textOnDanger: palette.grey950,
   primary: palette.brass300,
   primaryMuted: palette.brass500,
   primarySoft: palette.brassWashDark,

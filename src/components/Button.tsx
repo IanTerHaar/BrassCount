@@ -5,10 +5,23 @@ import {
   type ViewStyle,
 } from 'react-native';
 
+import type { SemanticColors } from '@/theme/theme';
 import { Typography } from '@components/Typography';
 import { useTheme } from '@hooks/useTheme';
 
-type ButtonVariant = 'primary' | 'secondary';
+/** `danger` is for an action that destroys something, such as a delete. */
+type ButtonVariant = 'primary' | 'secondary' | 'danger';
+
+type VariantColors = {
+  fill: keyof SemanticColors;
+  text: keyof SemanticColors;
+};
+
+const VARIANT_COLORS: Record<ButtonVariant, VariantColors> = {
+  primary: { fill: 'primary', text: 'textOnPrimary' },
+  secondary: { fill: 'surface', text: 'textPrimary' },
+  danger: { fill: 'danger', text: 'textOnDanger' },
+};
 
 type ButtonProps = {
   label: string;
@@ -34,10 +47,10 @@ export const Button = ({
   testID,
 }: ButtonProps) => {
   const theme = useTheme();
-  const isPrimary = variant === 'primary';
+  const colors = VARIANT_COLORS[variant];
 
   const containerStyle: ViewStyle = {
-    backgroundColor: isPrimary ? theme.colors.primary : theme.colors.surface,
+    backgroundColor: theme.colors[colors.fill],
     borderColor: theme.colors.border,
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: theme.radius.md,
@@ -58,10 +71,7 @@ export const Button = ({
       accessibilityState={{ disabled }}
       style={style ? [containerStyle, style] : containerStyle}
     >
-      <Typography
-        variant="bodyStrong"
-        color={isPrimary ? 'textOnPrimary' : 'textPrimary'}
-      >
+      <Typography variant="bodyStrong" color={colors.text}>
         {label}
       </Typography>
     </TouchableOpacity>

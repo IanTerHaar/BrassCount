@@ -1,6 +1,12 @@
 import type { ReactNode } from 'react';
 
-import { StyleSheet, TouchableOpacity, View } from 'react-native';
+import {
+  StyleSheet,
+  TouchableOpacity,
+  View,
+  type AccessibilityActionEvent,
+  type AccessibilityActionInfo,
+} from 'react-native';
 
 import type { Theme } from '@/theme/theme';
 import { useThemedStyles } from '@hooks/useTheme';
@@ -22,6 +28,12 @@ type ListRowProps = {
   chevron?: boolean;
   /** Hairline separator below the row. Omit on the last row of a group. */
   divided?: boolean;
+  /**
+   * Extra things a screen reader can do with a pressable row, for actions
+   * that are otherwise only reachable by a gesture such as a swipe.
+   */
+  accessibilityActions?: readonly AccessibilityActionInfo[];
+  onAccessibilityAction?: (event: AccessibilityActionEvent) => void;
   testID?: string;
 };
 
@@ -64,6 +76,8 @@ export const ListRow = ({
   onPress,
   chevron,
   divided = false,
+  accessibilityActions,
+  onAccessibilityAction,
   testID,
 }: ListRowProps) => {
   const styles = useThemedStyles(createStyles);
@@ -111,6 +125,8 @@ export const ListRow = ({
         testID={testID}
         onPress={onPress}
         accessibilityRole="button"
+        accessibilityActions={accessibilityActions}
+        onAccessibilityAction={onAccessibilityAction}
         activeOpacity={0.6}
         style={style}
       >
