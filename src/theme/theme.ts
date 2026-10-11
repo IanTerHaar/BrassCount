@@ -1,5 +1,7 @@
 import { Platform, type TextStyle, type ViewStyle } from 'react-native';
 
+import type { AppearancePreference } from '@/types/profile';
+
 /**
  * Raw palette. Never reference these directly from components — always go
  * through the semantic `colors` on the active theme so dark mode, rebranding
@@ -284,3 +286,18 @@ export const darkTheme: Theme = {
 };
 
 export const themes = { light: lightTheme, dark: darkTheme } as const;
+
+/**
+ * Which mode the app draws in for an Appearance preference. `system`
+ * follows the device's color scheme, and a device that reports none
+ * (`null`, or `unspecified` on some Android builds) gets light.
+ */
+export const resolveThemeMode = (
+  preference: AppearancePreference,
+  systemScheme: string | null | undefined,
+): ThemeMode => {
+  if (preference !== 'system') {
+    return preference;
+  }
+  return systemScheme === 'dark' ? 'dark' : 'light';
+};

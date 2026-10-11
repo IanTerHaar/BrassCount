@@ -1,18 +1,21 @@
-import { useMemo } from 'react';
+import { useContext, useMemo } from 'react';
 
 import { StyleSheet, useColorScheme } from 'react-native';
 
-import { darkTheme, lightTheme, type Theme } from '@/theme/theme';
+import { resolveThemeMode, themes, type Theme } from '@/theme/theme';
+import { AppearanceContext } from '@store/AppearanceContext';
 
 /**
- * Resolves the active theme from the OS color scheme. Screens/components
- * should get every design token from here — never import the theme module
- * directly, so we can add a manual override (settings toggle, feature flag)
- * in one place later.
+ * Resolves the active theme from the Appearance preference in the profile
+ * (`AppearanceProvider`), following the OS color scheme when it is
+ * `system` — or when there is no provider, as for a component rendered on
+ * its own in a test. Screens/components should get every design token from
+ * here — never import the theme module directly.
  */
 export const useTheme = (): Theme => {
   const scheme = useColorScheme();
-  return scheme === 'dark' ? darkTheme : lightTheme;
+  const appearance = useContext(AppearanceContext);
+  return themes[resolveThemeMode(appearance?.preference ?? 'system', scheme)];
 };
 
 /**
