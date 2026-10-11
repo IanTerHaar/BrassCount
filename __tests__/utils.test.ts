@@ -5,6 +5,7 @@ import {
   formatSeconds,
   pluralize,
   spokenDecibels,
+  spokenSeconds,
 } from '@utils/format';
 import { generateId } from '@utils/id';
 import { getTimestamp } from '@utils/timestamp';
@@ -42,6 +43,18 @@ describe('format utilities', () => {
   it('pluralizes nouns', () => {
     expect(pluralize(1, 'drill')).toBe('1 drill');
     expect(pluralize(3, 'drill')).toBe('3 drills');
+  });
+});
+
+describe('spokenSeconds', () => {
+  it('says a duration in words', () => {
+    expect(spokenSeconds(0.25)).toBe('0.25 seconds');
+    expect(spokenSeconds(1.5)).toBe('1.5 seconds');
+    expect(spokenSeconds(60)).toBe('60 seconds');
+  });
+
+  it('says exactly one second in the singular', () => {
+    expect(spokenSeconds(1)).toBe('1 second');
   });
 });
 
