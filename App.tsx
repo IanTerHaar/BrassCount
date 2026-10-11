@@ -4,25 +4,38 @@
  * @format
  */
 
-import { StatusBar, StyleSheet, useColorScheme } from 'react-native';
+import { StatusBar, StyleSheet } from 'react-native';
 
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { useTheme } from '@hooks/useTheme';
 import { RootNavigator } from '@navigation/RootNavigator';
+import { AppearanceProvider } from '@store/AppearanceContext';
 import { CalibrationProvider } from '@store/CalibrationContext';
 
-function App() {
-  const isDarkMode = useColorScheme() === 'dark';
+/** Status bar icons that stay readable on the theme in use. */
+const ThemedStatusBar = () => {
+  const theme = useTheme();
+  return (
+    <StatusBar
+      barStyle={theme.mode === 'dark' ? 'light-content' : 'dark-content'}
+    />
+  );
+};
 
+function App() {
   return (
     <GestureHandlerRootView style={styles.root}>
       <SafeAreaProvider>
-        <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
-        {/* Above the navigators, so calibration outlives any screen. */}
-        <CalibrationProvider>
-          <RootNavigator />
-        </CalibrationProvider>
+        {/* Holds back the app until the stored theme is known. */}
+        <AppearanceProvider>
+          <ThemedStatusBar />
+          {/* Above the navigators, so calibration outlives any screen. */}
+          <CalibrationProvider>
+            <RootNavigator />
+          </CalibrationProvider>
+        </AppearanceProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

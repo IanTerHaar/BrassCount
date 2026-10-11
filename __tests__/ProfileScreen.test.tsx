@@ -1,3 +1,5 @@
+import { Text } from 'react-native';
+
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import {
@@ -7,6 +9,7 @@ import {
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
+import { useTheme } from '../src/hooks/useTheme';
 import { ProfileScreen } from '../src/screens/ProfileScreen';
 import { saveDrill } from '../src/services/drillStorage';
 import {
@@ -15,7 +18,14 @@ import {
   loadProfile,
   updateProfile,
 } from '../src/services/profileStorage';
-import { saveSession } from '../src/services/sessionStorage';
+import {
+  SessionStorageService,
+  saveSession,
+} from '../src/services/sessionStorage';
+import {
+  AppearanceProvider,
+  type AppearanceProviderProps,
+} from '../src/store/AppearanceContext';
 import { DEFAULT_PROFILE, type Profile } from '../src/types/profile';
 
 type TestTabParamList = {
@@ -32,6 +42,11 @@ const Tab = createBottomTabNavigator<TestTabParamList>();
 
 /** A second tab to switch to, so the Profile tab can lose and regain focus. */
 const Elsewhere = () => null;
+
+/** Says which theme the rest of the app is being drawn in. */
+const ThemeProbe = () => (
+  <Text testID="text-theme-mode">{useTheme().mode}</Text>
+);
 
 const seedDrill = () =>
   saveDrill({
@@ -69,19 +84,31 @@ type Harness = {
 
 const mounted: ReactTestRenderer[] = [];
 
+/**
+ * The real storage functions, handed to the provider directly so a spy on
+ * `ProfileStorageService` only ever sees the screen's own reads and saves.
+ */
+const appearanceStorage: AppearanceProviderProps['storage'] = {
+  load: loadProfile,
+  update: updateProfile,
+};
+
 /** Mount the screen in a tab navigator without waiting for it to load. */
-const mountScreen = (): Harness => {
+const mountScreen = (storage = appearanceStorage): Harness => {
   const navigationRef = createNavigationContainerRef<TestTabParamList>();
   let tree: ReactTestRenderer | undefined;
   act(() => {
     tree = create(
       <SafeAreaProvider initialMetrics={metrics}>
-        <NavigationContainer ref={navigationRef}>
-          <Tab.Navigator screenOptions={{ headerShown: false }}>
-            <Tab.Screen name="Profile" component={ProfileScreen} />
-            <Tab.Screen name="Elsewhere" component={Elsewhere} />
-          </Tab.Navigator>
-        </NavigationContainer>
+        <AppearanceProvider storage={storage}>
+          <ThemeProbe />
+          <NavigationContainer ref={navigationRef}>
+            <Tab.Navigator screenOptions={{ headerShown: false }}>
+              <Tab.Screen name="Profile" component={ProfileScreen} />
+              <Tab.Screen name="Elsewhere" component={Elsewhere} />
+            </Tab.Navigator>
+          </NavigationContainer>
+        </AppearanceProvider>
       </SafeAreaProvider>,
     );
   });
@@ -102,8 +129,8 @@ const mountScreen = (): Harness => {
 };
 
 /** Mount the screen and wait until it shows what is in storage. */
-const renderScreen = async (): Promise<Harness> => {
-  const harness = mountScreen();
+const renderScreen = async (storage = appearanceStorage): Promise<Harness> => {
+  const harness = mountScreen(storage);
   await settle();
   return harness;
 };
@@ -160,11 +187,21 @@ describe('ProfileScreen', () => {
 
   describe('showing the profile', () => {
     it('says it is loading until storage answers', async () => {
-      const { tree } = mountScreen();
+      let releaseRead: () => void = () => {};
+      jest.spyOn(SessionStorageService, 'loadAll').mockImplementationOnce(
+        () =>
+          new Promise(resolve => {
+            releaseRead = () => resolve([]);
+          }),
+      );
+      const { tree } = await renderScreen();
 
       expect(has(tree, 'text-profile-loading')).toBe(true);
       expect(has(tree, 'text-profile-name')).toBe(false);
 
+      await act(async () => {
+        releaseRead();
+      });
       await settle();
 
       expect(has(tree, 'text-profile-loading')).toBe(false);
@@ -267,6 +304,133 @@ describe('ProfileScreen', () => {
       const { tree } = await renderScreen();
 
       expect(byTestId(tree, 'row-appearance')[0].props.subtitle).toBe('Dark');
+    });
+
+    it('opens the picker with the stored choice checked', async () => {
+      await updateProfile({ appearance: 'light' });
+      const { tree } = await renderScreen();
+
+      expect(byTestId(tree, 'opt-appearance-light')).toHaveLength(0);
+      await press(tree, 'row-appearance');
+
+      const checked = (preference: string) =>
+        byTestId(tree, `opt-appearance-${preference}`)[0].props
+          .accessibilityState.checked;
+      expect(checked('system')).toBe(false);
+      expect(checked('light')).toBe(true);
+      expect(checked('dark')).toBe(false);
+    });
+
+    it('switches the theme and stores the choice', async () => {
+      const { tree } = await renderScreen();
+      expect(textOf(tree, 'text-theme-mode')).toBe('light');
+
+      await press(tree, 'row-appearance');
+      await press(tree, 'opt-appearance-dark');
+
+      expect(textOf(tree, 'text-theme-mode')).toBe('dark');
+      expect(byTestId(tree, 'row-appearance')[0].props.subtitle).toBe('Dark');
+      expect(byTestId(tree, 'opt-appearance-dark')).toHaveLength(0);
+      expect((await loadProfile()).appearance).toBe('dark');
+    });
+
+    it('draws the stored theme from the first frame', async () => {
+      await updateProfile({ appearance: 'dark' });
+
+      const { tree } = await renderScreen();
+
+      expect(textOf(tree, 'text-theme-mode')).toBe('dark');
+    });
+
+    it('follows the device again when System is chosen', async () => {
+      await updateProfile({ appearance: 'dark' });
+      const { tree } = await renderScreen();
+
+      await press(tree, 'row-appearance');
+      await press(tree, 'opt-appearance-system');
+
+      // The test environment reports a light device.
+      expect(textOf(tree, 'text-theme-mode')).toBe('light');
+      expect(byTestId(tree, 'row-appearance')[0].props.subtitle).toBe(
+        'Follows your device setting',
+      );
+      expect((await loadProfile()).appearance).toBe('system');
+    });
+
+    it('changes nothing when the picker is closed without a choice', async () => {
+      const { tree } = await renderScreen();
+
+      await press(tree, 'row-appearance');
+      await press(tree, 'btn-appearance-close');
+
+      expect(byTestId(tree, 'opt-appearance-dark')).toHaveLength(0);
+      expect(textOf(tree, 'text-theme-mode')).toBe('light');
+      expect((await loadProfile()).updatedAt).toBeNull();
+    });
+
+    it('puts the old theme back and says so when the save fails', async () => {
+      await updateProfile({ appearance: 'light' });
+      const { tree } = await renderScreen({
+        load: loadProfile,
+        update: () =>
+          Promise.reject(
+            new ProfileStorageError('disk full', 'STORAGE_FAILURE'),
+          ),
+      });
+
+      await press(tree, 'row-appearance');
+      await press(tree, 'opt-appearance-dark');
+
+      expect(textOf(tree, 'text-theme-mode')).toBe('light');
+      expect(byTestId(tree, 'row-appearance')[0].props.subtitle).toBe('Light');
+      expect(textOf(tree, 'text-appearance-error')).toBe(
+        'Could not save your theme. Try again.',
+      );
+      expect((await loadProfile()).appearance).toBe('light');
+    });
+
+    it('shows no error when an older save fails after a newer choice', async () => {
+      let failFirst: () => void = () => {};
+      let calls = 0;
+      const { tree } = await renderScreen({
+        load: loadProfile,
+        update: changes => {
+          calls += 1;
+          if (calls === 1) {
+            return new Promise<Profile>((_, reject) => {
+              failFirst = () =>
+                reject(new ProfileStorageError('disk full', 'STORAGE_FAILURE'));
+            });
+          }
+          return updateProfile(changes);
+        },
+      });
+
+      await press(tree, 'row-appearance');
+      await press(tree, 'opt-appearance-dark');
+      await press(tree, 'row-appearance');
+      await press(tree, 'opt-appearance-light');
+      await act(async () => {
+        failFirst();
+      });
+      await settle();
+
+      expect(has(tree, 'text-appearance-error')).toBe(false);
+      expect(textOf(tree, 'text-theme-mode')).toBe('light');
+      expect((await loadProfile()).appearance).toBe('light');
+    });
+
+    it('follows the device when the stored choice cannot be read', async () => {
+      const { tree } = await renderScreen({
+        load: () =>
+          Promise.reject(
+            new ProfileStorageError('unreadable', 'STORAGE_FAILURE'),
+          ),
+        update: updateProfile,
+      });
+
+      expect(textOf(tree, 'text-theme-mode')).toBe('light');
+      expect(has(tree, 'row-appearance')).toBe(true);
     });
 
     it('offers no sign out, as there is no account to leave', async () => {

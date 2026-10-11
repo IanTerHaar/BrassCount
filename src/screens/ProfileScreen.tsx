@@ -11,6 +11,7 @@ import {
   type Profile,
   type ProfileChanges,
 } from '@/types/profile';
+import { AppearanceSheet } from '@components/AppearanceSheet';
 import { Avatar } from '@components/Avatar';
 import { Button } from '@components/Button';
 import { Card } from '@components/Card';
@@ -20,6 +21,7 @@ import { Screen } from '@components/Screen';
 import { SectionHeader } from '@components/SectionHeader';
 import { TextField } from '@components/TextField';
 import { Typography } from '@components/Typography';
+import { useAppearance } from '@hooks/useAppearance';
 import { useProfileOverview } from '@hooks/useProfileOverview';
 import { useThemedStyles } from '@hooks/useTheme';
 import { ProfileStorageError } from '@services/profileStorage';
@@ -74,6 +76,10 @@ const createStyles = (theme: Theme) =>
     loading: {
       alignItems: 'center',
       paddingVertical: theme.spacing.xxl,
+    },
+    preferenceError: {
+      marginTop: theme.spacing.sm,
+      paddingHorizontal: theme.spacing.xs,
     },
   });
 
@@ -210,6 +216,58 @@ const ProfileEditor = ({ profile, onSave, onCancel }: ProfileEditorProps) => {
 };
 
 /**
+ * The Preferences group: the Appearance row and the sheet it opens. The
+ * choice applies at once; a save that fails puts the old theme back and
+ * says so under the row.
+ */
+const AppearancePreferences = () => {
+  const styles = useThemedStyles(createStyles);
+  const { preference, setPreference } = useAppearance();
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [saveFailed, setSaveFailed] = useState(false);
+
+  const choose = useCallback(
+    (next: AppearancePreference) => {
+      setPickerOpen(false);
+      setSaveFailed(false);
+      setPreference(next).catch(() => setSaveFailed(true));
+    },
+    [setPreference],
+  );
+
+  return (
+    <View>
+      <SectionHeader title="Preferences" />
+      <Card flush>
+        <ListRow
+          title="Appearance"
+          subtitle={APPEARANCE_SUMMARY[preference]}
+          onPress={() => setPickerOpen(true)}
+          testID="row-appearance"
+        />
+      </Card>
+      {saveFailed ? (
+        <Typography
+          variant="caption"
+          color="danger"
+          accessibilityLiveRegion="polite"
+          style={styles.preferenceError}
+          testID="text-appearance-error"
+        >
+          Could not save your theme. Try again.
+        </Typography>
+      ) : null}
+      <AppearanceSheet
+        visible={pickerOpen}
+        selected={preference}
+        onSelect={choose}
+        onClose={() => setPickerOpen(false)}
+      />
+    </View>
+  );
+};
+
+/**
  * Who the shooter is on this device and how much they have recorded: the
  * local profile from `ProfileStorageService`, with run and drill counts
  * from session and drill storage. There is no account behind any of it.
@@ -316,16 +374,7 @@ export const ProfileScreen = () => {
         </View>
       </Card>
 
-      <View>
-        <SectionHeader title="Preferences" />
-        <Card flush>
-          <ListRow
-            title="Appearance"
-            subtitle={APPEARANCE_SUMMARY[profile.appearance]}
-            testID="row-appearance"
-          />
-        </Card>
-      </View>
+      <AppearancePreferences />
     </Screen>
   );
 };
