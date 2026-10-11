@@ -1,5 +1,17 @@
-import { Dimensions, StyleSheet } from 'react-native';
+import {
+  DeviceEventEmitter,
+  Dimensions,
+  Linking,
+  PermissionsAndroid,
+  Platform,
+  StyleSheet,
+} from 'react-native';
 
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import {
+  NavigationContainer,
+  createNavigationContainerRef,
+} from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import {
   act,
@@ -11,16 +23,35 @@ import {
 import { useCalibration } from '../src/hooks/useCalibration';
 import { CalibrationScreen } from '../src/screens/CalibrationScreen';
 import {
+  AUDIO_AMPLITUDE_EVENT,
+  AUDIO_CAPTURE_ERROR_EVENT,
+} from '../src/services/audioCapture';
+import NativeAudioCapture from '../src/specs/NativeAudioCapture';
+import {
   CalibrationProvider,
   type CalibrationContextValue,
 } from '../src/store/CalibrationContext';
 import { CALIBRATION_SOUNDS } from '../src/types/calibration';
 import type { CalibrationSound } from '../src/types/calibration';
+import { CALIBRATION_LISTEN_MS } from '../src/utils/calibration';
+
+// The native module itself is mocked globally in jest.setup.js.
+const mockedNativeAudioCapture = jest.mocked(NativeAudioCapture);
+
+type TestTabParamList = {
+  Calibration: undefined;
+  Elsewhere: undefined;
+};
 
 const metrics = {
   frame: { x: 0, y: 0, width: 390, height: 844 },
   insets: { top: 0, left: 0, right: 0, bottom: 0 },
 };
+
+const Tab = createBottomTabNavigator<TestTabParamList>();
+
+/** Stands in for the other tabs. */
+const Blank = () => null;
 
 /** Sits beside the screen so a test can drive the store it reads from. */
 const StoreHandle = ({
@@ -32,7 +63,14 @@ const StoreHandle = ({
   return null;
 };
 
+const mounted: ReactTestRenderer[] = [];
+
+/**
+ * Mount the screen as a tab, the way the app does: it stops listening when
+ * its tab loses focus, so it needs a navigator to tell it.
+ */
 const renderScreen = () => {
+  const navigationRef = createNavigationContainerRef<TestTabParamList>();
   let store: CalibrationContextValue | undefined;
   let tree: ReactTestRenderer | undefined;
   act(() => {
@@ -44,7 +82,12 @@ const renderScreen = () => {
               store = value;
             }}
           />
-          <CalibrationScreen />
+          <NavigationContainer ref={navigationRef}>
+            <Tab.Navigator screenOptions={{ headerShown: false }}>
+              <Tab.Screen name="Calibration" component={CalibrationScreen} />
+              <Tab.Screen name="Elsewhere" component={Blank} />
+            </Tab.Navigator>
+          </NavigationContainer>
         </CalibrationProvider>
       </SafeAreaProvider>,
     );
@@ -52,6 +95,7 @@ const renderScreen = () => {
   if (tree === undefined) {
     throw new Error('render failed');
   }
+  mounted.push(tree);
   return {
     tree,
     store: (): CalibrationContextValue => {
@@ -59,6 +103,12 @@ const renderScreen = () => {
         throw new Error('store handle has not rendered');
       }
       return store;
+    },
+    /** Switch to another tab, or back to Calibration. */
+    goTo: (tab: keyof TestTabParamList): void => {
+      act(() => {
+        navigationRef.navigate(tab);
+      });
     },
   };
 };
@@ -113,6 +163,84 @@ const markerPosition = (
 const buttonLabel = (tree: ReactTestRenderer, testID: string): string =>
   tree.root.findAllByProps({ testID })[0].props.accessibilityLabel;
 
+/** The word shown on a button. */
+const buttonText = (tree: ReactTestRenderer, testID: string): string =>
+  tree.root.findAllByProps({ testID })[0].props.label;
+
+/** Whether a button is announced, and behaves, as disabled. */
+const isDisabled = (tree: ReactTestRenderer, testID: string): boolean =>
+  tree.root.findAll(
+    node =>
+      node.props.testID === testID &&
+      node.props.accessibilityState !== undefined,
+  )[0].props.accessibilityState.disabled;
+
+const has = (tree: ReactTestRenderer, testID: string): boolean =>
+  tree.root.findAllByProps({ testID }).length > 0;
+
+/** The line under a card's readouts, or `null` when it shows none. */
+const feedbackText = (
+  tree: ReactTestRenderer,
+  sound: CalibrationSound,
+): string | null => {
+  const lines = tree.root.findAllByProps({
+    testID: `text-feedback-${sound}`,
+  });
+  return lines.length === 0 ? null : lines[0].props.children;
+};
+
+/** What a screen reader says for that line. */
+const feedbackSpoken = (
+  tree: ReactTestRenderer,
+  sound: CalibrationSound,
+): string | undefined =>
+  tree.root.findAllByProps({ testID: `text-feedback-${sound}` })[0].props
+    .accessibilityLabel;
+
+/** Tap a button and let the capture it starts reach the microphone. */
+const press = async (tree: ReactTestRenderer, testID: string) => {
+  await act(async () => {
+    tree.root.findAllByProps({ testID })[0].props.onPress();
+    await jest.advanceTimersByTimeAsync(0);
+  });
+};
+
+/** Deliver a reading with this peak level, as the microphone stream would. */
+const hear = (peakDb: number): void => {
+  act(() => {
+    DeviceEventEmitter.emit(AUDIO_AMPLITUDE_EVENT, {
+      amplitude: 0.1,
+      db: peakDb - 3,
+      peak: 0.2,
+      peakDb,
+      timestamp: 0,
+      peakTimestamp: 0,
+    });
+  });
+};
+
+/** Let the rest of the listening window pass. */
+const finishListening = async (): Promise<void> => {
+  await act(async () => {
+    await jest.advanceTimersByTimeAsync(CALIBRATION_LISTEN_MS);
+  });
+};
+
+/** Run one whole capture from a button, hearing the given peak levels. */
+const capture = async (
+  tree: ReactTestRenderer,
+  testID: string,
+  ...peaks: number[]
+): Promise<void> => {
+  await press(tree, testID);
+  peaks.forEach(hear);
+  await finishListening();
+};
+
+/** A rejection shaped like the one React Native builds from `promise.reject(code, message)`. */
+const nativeRejection = (code: string, message: string): Error =>
+  Object.assign(new Error(message), { code });
+
 /** Reports a new system font scale the way the OS does, as a window change. */
 const setFontScale = (fontScale: number): void => {
   act(() => {
@@ -148,6 +276,10 @@ describe('CalibrationScreen', () => {
   const initialWindow = Dimensions.get('window');
 
   afterEach(() => {
+    // Unmount, or the navigator's pending work outlives the test.
+    act(() => {
+      mounted.splice(0).forEach(tree => tree.unmount());
+    });
     setFontScale(initialWindow.fontScale);
   });
 
@@ -235,7 +367,7 @@ describe('CalibrationScreen', () => {
     });
 
     expect(spokenSummary(tree, 'reload')).toBe(
-      'Reload, calibrated, threshold minus 24 decibels, last test minus 19 decibels',
+      'Reload, calibrated, threshold minus 24 decibels, last test minus 19 decibels, test passed',
     );
   });
 
@@ -384,5 +516,556 @@ describe('CalibrationScreen', () => {
 
     expect(chipLabel(tree, 'rack')).toBe('Not calibrated');
     expect(thresholdText(tree, 'rack')).toBe('—');
+  });
+
+  describe('listening to the microphone', () => {
+    const originalPlatformOS = Platform.OS;
+    let permissionCheck: jest.SpiedFunction<typeof PermissionsAndroid.check>;
+    let permissionRequest: jest.SpiedFunction<
+      typeof PermissionsAndroid.request
+    >;
+
+    beforeEach(() => {
+      jest.useFakeTimers();
+      Object.defineProperty(Platform, 'OS', {
+        value: 'android',
+        configurable: true,
+      });
+      permissionCheck = jest
+        .spyOn(PermissionsAndroid, 'check')
+        .mockResolvedValue(true);
+      permissionRequest = jest
+        .spyOn(PermissionsAndroid, 'request')
+        .mockResolvedValue(PermissionsAndroid.RESULTS.GRANTED);
+      mockedNativeAudioCapture.start.mockResolvedValue(undefined);
+      mockedNativeAudioCapture.stop.mockResolvedValue(undefined);
+    });
+
+    afterEach(() => {
+      // The outer afterEach runs after this one, so unmount here while the
+      // fake timers a capture is waiting on still exist.
+      act(() => {
+        mounted.splice(0).forEach(tree => tree.unmount());
+      });
+      jest.useRealTimers();
+      jest.restoreAllMocks();
+      jest.clearAllMocks();
+      Object.defineProperty(Platform, 'OS', {
+        value: originalPlatformOS,
+        configurable: true,
+      });
+    });
+
+    describe('Recalibrate', () => {
+      it('sets the threshold a margin below the loudest sound it heard', async () => {
+        const { tree } = renderScreen();
+
+        await capture(tree, 'btn-recalibrate-shot', -40, -12, -25);
+
+        expect(thresholdText(tree, 'shot')).toBe('-18 dB');
+        expect(chipLabel(tree, 'shot')).toBe('Calibrated');
+      });
+
+      it('says the threshold was set, in words a screen reader can say', async () => {
+        const { tree } = renderScreen();
+
+        await capture(tree, 'btn-recalibrate-shot', -12);
+
+        expect(feedbackText(tree, 'shot')).toBe(
+          'Threshold set to -18 dB. Run a test to check it.',
+        );
+        expect(feedbackSpoken(tree, 'shot')).toBe(
+          'Threshold set to minus 18 decibels. Run a test to check it.',
+        );
+      });
+
+      it('replaces what a screen reader says when the line changes', async () => {
+        const { tree } = renderScreen();
+        await capture(tree, 'btn-recalibrate-shot', -12);
+
+        await capture(tree, 'btn-test-shot', -14);
+
+        // Android keeps a label that is merely dropped, so each line has to
+        // carry its own rather than fall back to the visible text.
+        expect(feedbackSpoken(tree, 'shot')).toBe(
+          'Test passed. The sound reached the threshold.',
+        );
+      });
+
+      it('says nothing under a sound that has never been calibrated', () => {
+        const { tree } = renderScreen();
+
+        expect(feedbackText(tree, 'shot')).toBeNull();
+      });
+
+      it('calibrates only the sound whose button was pressed', async () => {
+        const { tree } = renderScreen();
+
+        await capture(tree, 'btn-recalibrate-reload', -20);
+
+        expect(chipLabel(tree, 'reload')).toBe('Calibrated');
+        expect(chipLabel(tree, 'shot')).toBe('Not calibrated');
+        expect(chipLabel(tree, 'rack')).toBe('Not calibrated');
+      });
+
+      it('says it is listening and what to do, until the window ends', async () => {
+        const { tree } = renderScreen();
+
+        await press(tree, 'btn-recalibrate-rack');
+
+        expect(chipLabel(tree, 'rack')).toBe('Listening');
+        expect(feedbackText(tree, 'rack')).toBe(
+          'Listening. Rack the slide now.',
+        );
+        expect(spokenSummary(tree, 'rack')).toBe(
+          'Rack, listening, threshold not set',
+        );
+
+        hear(-20);
+        await finishListening();
+
+        expect(chipLabel(tree, 'rack')).toBe('Calibrated');
+        expect(feedbackText(tree, 'rack')).toBe(
+          'Threshold set to -26 dB. Run a test to check it.',
+        );
+      });
+
+      it('closes the microphone once the sample is taken', async () => {
+        const { tree } = renderScreen();
+
+        await capture(tree, 'btn-recalibrate-shot', -12);
+
+        expect(mockedNativeAudioCapture.start).toHaveBeenCalledTimes(1);
+        expect(mockedNativeAudioCapture.stop).toHaveBeenCalledTimes(1);
+      });
+
+      it('keeps the sound not calibrated when nothing loud enough was heard', async () => {
+        const { tree } = renderScreen();
+
+        await capture(tree, 'btn-recalibrate-shot', -75);
+
+        expect(chipLabel(tree, 'shot')).toBe('Not calibrated');
+        expect(thresholdText(tree, 'shot')).toBe('—');
+        expect(feedbackText(tree, 'shot')).toBe(
+          'No sound heard. Try again, closer to the microphone.',
+        );
+      });
+
+      it('keeps the previous threshold when nothing loud enough was heard', async () => {
+        const { tree } = renderScreen();
+        await capture(tree, 'btn-recalibrate-shot', -12);
+
+        await capture(tree, 'btn-recalibrate-shot');
+
+        expect(thresholdText(tree, 'shot')).toBe('-18 dB');
+        expect(chipLabel(tree, 'shot')).toBe('Calibrated');
+        expect(feedbackText(tree, 'shot')).toBe(
+          'No sound heard. Try again, closer to the microphone.',
+        );
+      });
+
+      it('drops the last test result when the sound is calibrated again', async () => {
+        const { tree } = renderScreen();
+        await capture(tree, 'btn-recalibrate-shot', -12);
+        await capture(tree, 'btn-test-shot', -10);
+
+        await capture(tree, 'btn-recalibrate-shot', -20);
+
+        expect(chipLabel(tree, 'shot')).toBe('Calibrated');
+        expect(thresholdText(tree, 'shot')).toBe('-26 dB');
+        expect(lastTestText(tree, 'shot')).toBe('—');
+        expect(feedbackText(tree, 'shot')).toBe(
+          'Threshold set to -26 dB. Run a test to check it.',
+        );
+      });
+    });
+
+    describe('Test', () => {
+      it('cannot be run on a sound that is not calibrated', () => {
+        const { tree } = renderScreen();
+
+        CALIBRATION_SOUNDS.forEach(sound => {
+          expect(isDisabled(tree, `btn-test-${sound}`)).toBe(true);
+          expect(isDisabled(tree, `btn-recalibrate-${sound}`)).toBe(false);
+        });
+      });
+
+      it('can be run once the sound is calibrated', async () => {
+        const { tree } = renderScreen();
+
+        await capture(tree, 'btn-recalibrate-shot', -12);
+
+        expect(isDisabled(tree, 'btn-test-shot')).toBe(false);
+        expect(isDisabled(tree, 'btn-test-reload')).toBe(true);
+      });
+
+      it('passes a sound that reaches the threshold', async () => {
+        const { tree } = renderScreen();
+        await capture(tree, 'btn-recalibrate-shot', -12);
+
+        await capture(tree, 'btn-test-shot', -30, -14);
+
+        expect(chipLabel(tree, 'shot')).toBe('Test passed');
+        expect(feedbackText(tree, 'shot')).toBe(
+          'Test passed. The sound reached the threshold.',
+        );
+        expect(lastTestText(tree, 'shot')).toBe('-14 dB');
+        expect(spokenSummary(tree, 'shot')).toBe(
+          'Shot, calibrated, threshold minus 18 decibels, last test minus 14 decibels, test passed',
+        );
+      });
+
+      it('fails a sound that is quieter than the threshold', async () => {
+        const { tree } = renderScreen();
+        await capture(tree, 'btn-recalibrate-shot', -12);
+
+        await capture(tree, 'btn-test-shot', -31);
+
+        expect(chipLabel(tree, 'shot')).toBe('Test failed');
+        expect(feedbackText(tree, 'shot')).toBe(
+          'Test failed. The sound was quieter than the threshold.',
+        );
+        expect(lastTestText(tree, 'shot')).toBe('-31 dB');
+        expect(spokenSummary(tree, 'shot')).toBe(
+          'Shot, calibrated, threshold minus 18 decibels, last test minus 31 decibels, test failed',
+        );
+      });
+
+      it('fails when the microphone heard nothing at all', async () => {
+        const { tree } = renderScreen();
+        await capture(tree, 'btn-recalibrate-shot', -12);
+
+        await capture(tree, 'btn-test-shot');
+
+        expect(chipLabel(tree, 'shot')).toBe('Test failed');
+        expect(lastTestText(tree, 'shot')).toBe('-160 dB');
+      });
+
+      it('leaves the threshold as it was', async () => {
+        const { tree } = renderScreen();
+        await capture(tree, 'btn-recalibrate-shot', -12);
+
+        await capture(tree, 'btn-test-shot', -2);
+
+        expect(thresholdText(tree, 'shot')).toBe('-18 dB');
+      });
+
+      it('replaces the previous result with the latest test', async () => {
+        const { tree } = renderScreen();
+        await capture(tree, 'btn-recalibrate-shot', -12);
+        await capture(tree, 'btn-test-shot', -40);
+
+        await capture(tree, 'btn-test-shot', -10);
+
+        expect(chipLabel(tree, 'shot')).toBe('Test passed');
+        expect(lastTestText(tree, 'shot')).toBe('-10 dB');
+      });
+
+      it('says it is listening and what to do, until the window ends', async () => {
+        const { tree } = renderScreen();
+        await capture(tree, 'btn-recalibrate-reload', -12);
+
+        await press(tree, 'btn-test-reload');
+
+        expect(chipLabel(tree, 'reload')).toBe('Listening');
+        expect(feedbackText(tree, 'reload')).toBe(
+          'Listening. Change the magazine now.',
+        );
+        expect(spokenSummary(tree, 'reload')).toBe(
+          'Reload, listening, threshold minus 18 decibels, not tested yet',
+        );
+      });
+    });
+
+    describe('while one sound is listening', () => {
+      it('holds every other button until the microphone is free', async () => {
+        const { tree } = renderScreen();
+        await capture(tree, 'btn-recalibrate-reload', -12);
+
+        await press(tree, 'btn-recalibrate-shot');
+
+        expect(isDisabled(tree, 'btn-test-shot')).toBe(true);
+        expect(isDisabled(tree, 'btn-recalibrate-reload')).toBe(true);
+        expect(isDisabled(tree, 'btn-test-reload')).toBe(true);
+        expect(isDisabled(tree, 'btn-recalibrate-rack')).toBe(true);
+
+        hear(-12);
+        await finishListening();
+
+        expect(isDisabled(tree, 'btn-test-shot')).toBe(false);
+        expect(isDisabled(tree, 'btn-recalibrate-reload')).toBe(false);
+        expect(isDisabled(tree, 'btn-test-reload')).toBe(false);
+        expect(isDisabled(tree, 'btn-recalibrate-rack')).toBe(false);
+      });
+
+      it('turns the pressed button into Cancel', async () => {
+        const { tree } = renderScreen();
+
+        await press(tree, 'btn-recalibrate-shot');
+
+        expect(buttonText(tree, 'btn-recalibrate-shot')).toBe('Cancel');
+        expect(buttonLabel(tree, 'btn-recalibrate-shot')).toBe(
+          'Cancel recalibrating shot',
+        );
+        expect(isDisabled(tree, 'btn-recalibrate-shot')).toBe(false);
+      });
+
+      it('turns Test into Cancel while a test is listening', async () => {
+        const { tree } = renderScreen();
+        await capture(tree, 'btn-recalibrate-shot', -12);
+
+        await press(tree, 'btn-test-shot');
+
+        expect(buttonText(tree, 'btn-test-shot')).toBe('Cancel');
+        expect(buttonLabel(tree, 'btn-test-shot')).toBe('Cancel testing shot');
+        expect(isDisabled(tree, 'btn-recalibrate-shot')).toBe(true);
+      });
+
+      it('stops listening and changes nothing when cancelled', async () => {
+        const { tree } = renderScreen();
+        await press(tree, 'btn-recalibrate-shot');
+        hear(-12);
+
+        await press(tree, 'btn-recalibrate-shot');
+        await finishListening();
+
+        expect(mockedNativeAudioCapture.stop).toHaveBeenCalledTimes(1);
+        expect(chipLabel(tree, 'shot')).toBe('Not calibrated');
+        expect(thresholdText(tree, 'shot')).toBe('—');
+        expect(feedbackText(tree, 'shot')).toBeNull();
+        expect(buttonText(tree, 'btn-recalibrate-shot')).toBe('Recalibrate');
+      });
+
+      it('keeps the last test result when a new test is cancelled', async () => {
+        const { tree } = renderScreen();
+        await capture(tree, 'btn-recalibrate-shot', -12);
+        await capture(tree, 'btn-test-shot', -10);
+        await press(tree, 'btn-test-shot');
+        hear(-50);
+
+        await press(tree, 'btn-test-shot');
+        await finishListening();
+
+        expect(chipLabel(tree, 'shot')).toBe('Test passed');
+        expect(lastTestText(tree, 'shot')).toBe('-10 dB');
+      });
+
+      it('changes nothing when cancelled while the microphone is closing', async () => {
+        const { tree } = renderScreen();
+        let finishClosing: () => void = () => {};
+        mockedNativeAudioCapture.stop.mockImplementation(
+          () =>
+            new Promise<void>(resolve => {
+              finishClosing = resolve;
+            }),
+        );
+        await press(tree, 'btn-recalibrate-shot');
+        hear(-12);
+        await finishListening();
+        expect(buttonText(tree, 'btn-recalibrate-shot')).toBe('Cancel');
+
+        await press(tree, 'btn-recalibrate-shot');
+        await act(async () => {
+          finishClosing();
+          await jest.advanceTimersByTimeAsync(0);
+        });
+
+        expect(chipLabel(tree, 'shot')).toBe('Not calibrated');
+        expect(thresholdText(tree, 'shot')).toBe('—');
+        expect(buttonText(tree, 'btn-recalibrate-shot')).toBe('Recalibrate');
+      });
+
+      it('never opens the microphone when cancelled before the permission is answered', async () => {
+        permissionCheck.mockResolvedValue(false);
+        let answerDialog: (result: 'granted') => void = () => {};
+        permissionRequest.mockImplementation(
+          () =>
+            new Promise(resolve => {
+              answerDialog = resolve;
+            }),
+        );
+        const { tree } = renderScreen();
+        await press(tree, 'btn-recalibrate-shot');
+        expect(chipLabel(tree, 'shot')).toBe('Listening');
+
+        await press(tree, 'btn-recalibrate-shot');
+        expect(chipLabel(tree, 'shot')).toBe('Not calibrated');
+        await act(async () => {
+          answerDialog('granted');
+          await jest.advanceTimersByTimeAsync(CALIBRATION_LISTEN_MS);
+        });
+
+        expect(mockedNativeAudioCapture.start).not.toHaveBeenCalled();
+        expect(chipLabel(tree, 'shot')).toBe('Not calibrated');
+        expect(feedbackText(tree, 'shot')).toBeNull();
+      });
+
+      it('stops listening when the tab is left, and changes nothing', async () => {
+        const { tree, goTo } = renderScreen();
+        await press(tree, 'btn-recalibrate-shot');
+        hear(-12);
+
+        goTo('Elsewhere');
+        await finishListening();
+        goTo('Calibration');
+
+        expect(mockedNativeAudioCapture.stop).toHaveBeenCalledTimes(1);
+        expect(chipLabel(tree, 'shot')).toBe('Not calibrated');
+        expect(buttonText(tree, 'btn-recalibrate-shot')).toBe('Recalibrate');
+        expect(isDisabled(tree, 'btn-recalibrate-reload')).toBe(false);
+      });
+
+      it('stops listening when the screen goes away', async () => {
+        const { tree } = renderScreen();
+        await press(tree, 'btn-recalibrate-shot');
+
+        await act(async () => {
+          mounted.splice(0).forEach(mountedTree => mountedTree.unmount());
+          await jest.advanceTimersByTimeAsync(CALIBRATION_LISTEN_MS);
+        });
+
+        expect(tree.toJSON()).toBeNull();
+        expect(mockedNativeAudioCapture.stop).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    describe('when the microphone cannot be used', () => {
+      it('asks for microphone access the first time, then listens', async () => {
+        permissionCheck.mockResolvedValue(false);
+        const { tree } = renderScreen();
+
+        await capture(tree, 'btn-recalibrate-shot', -12);
+
+        expect(permissionRequest).toHaveBeenCalledWith(
+          PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+        );
+        expect(chipLabel(tree, 'shot')).toBe('Calibrated');
+      });
+
+      it('says access is needed when the request is declined', async () => {
+        permissionCheck.mockResolvedValue(false);
+        permissionRequest.mockResolvedValue(PermissionsAndroid.RESULTS.DENIED);
+        const { tree } = renderScreen();
+
+        await press(tree, 'btn-recalibrate-shot');
+
+        expect(feedbackText(tree, 'shot')).toBe(
+          'Microphone access is needed to listen for this sound.',
+        );
+        expect(chipLabel(tree, 'shot')).toBe('Not calibrated');
+        expect(mockedNativeAudioCapture.start).not.toHaveBeenCalled();
+        expect(has(tree, 'btn-open-settings-shot')).toBe(false);
+      });
+
+      it('asks again on the next attempt after a declined request', async () => {
+        permissionCheck.mockResolvedValue(false);
+        permissionRequest.mockResolvedValueOnce(
+          PermissionsAndroid.RESULTS.DENIED,
+        );
+        const { tree } = renderScreen();
+        await press(tree, 'btn-recalibrate-shot');
+
+        await capture(tree, 'btn-recalibrate-shot', -12);
+
+        expect(permissionRequest).toHaveBeenCalledTimes(2);
+        expect(chipLabel(tree, 'shot')).toBe('Calibrated');
+        expect(feedbackText(tree, 'shot')).toBe(
+          'Threshold set to -18 dB. Run a test to check it.',
+        );
+      });
+
+      it('points to the system settings when access is blocked', async () => {
+        permissionCheck.mockResolvedValue(false);
+        permissionRequest.mockResolvedValue(
+          PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN,
+        );
+        const openSettings = jest
+          .spyOn(Linking, 'openSettings')
+          .mockResolvedValue(undefined);
+        const { tree } = renderScreen();
+
+        await press(tree, 'btn-recalibrate-reload');
+
+        expect(feedbackText(tree, 'reload')).toBe(
+          'Microphone access is turned off. Allow it in Settings, then try again.',
+        );
+        expect(has(tree, 'btn-open-settings-shot')).toBe(false);
+
+        await press(tree, 'btn-open-settings-reload');
+
+        expect(openSettings).toHaveBeenCalledTimes(1);
+      });
+
+      it('stays usable when the system settings cannot be opened', async () => {
+        permissionCheck.mockResolvedValue(false);
+        permissionRequest.mockResolvedValue(
+          PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN,
+        );
+        jest
+          .spyOn(Linking, 'openSettings')
+          .mockRejectedValue(new Error('no settings activity'));
+        const { tree } = renderScreen();
+        await press(tree, 'btn-recalibrate-reload');
+
+        await press(tree, 'btn-open-settings-reload');
+
+        expect(has(tree, 'btn-open-settings-reload')).toBe(true);
+        expect(isDisabled(tree, 'btn-recalibrate-reload')).toBe(false);
+      });
+
+      it('says listening stopped when the app is left mid-capture', async () => {
+        const { tree } = renderScreen();
+        await press(tree, 'btn-recalibrate-shot');
+        hear(-12);
+
+        act(() => {
+          DeviceEventEmitter.emit(AUDIO_CAPTURE_ERROR_EVENT, {
+            code: 'INTERRUPTED',
+            message:
+              'Audio capture stopped because the app left the foreground',
+          });
+        });
+        await finishListening();
+
+        expect(feedbackText(tree, 'shot')).toBe(
+          'Listening stopped because the app was left. Try again.',
+        );
+        expect(chipLabel(tree, 'shot')).toBe('Not calibrated');
+        expect(isDisabled(tree, 'btn-recalibrate-reload')).toBe(false);
+      });
+
+      it('says the microphone could not be used when it fails to open', async () => {
+        mockedNativeAudioCapture.start.mockRejectedValue(
+          nativeRejection('INIT_FAILED', 'AudioRecord failed to initialize'),
+        );
+        const { tree } = renderScreen();
+
+        await press(tree, 'btn-recalibrate-rack');
+
+        expect(feedbackText(tree, 'rack')).toBe(
+          'The microphone could not be used. Try again.',
+        );
+        expect(chipLabel(tree, 'rack')).toBe('Not calibrated');
+      });
+
+      it('shows a failure only on the sound it happened to', async () => {
+        const { tree } = renderScreen();
+
+        await capture(tree, 'btn-recalibrate-shot');
+
+        expect(feedbackText(tree, 'shot')).not.toBeNull();
+        expect(feedbackText(tree, 'reload')).toBeNull();
+        expect(feedbackText(tree, 'rack')).toBeNull();
+      });
+
+      it('clears the failure when another capture starts', async () => {
+        const { tree } = renderScreen();
+        await capture(tree, 'btn-recalibrate-shot');
+
+        await press(tree, 'btn-recalibrate-reload');
+
+        expect(feedbackText(tree, 'shot')).toBeNull();
+      });
+    });
   });
 });
