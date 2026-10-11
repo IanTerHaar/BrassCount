@@ -1,4 +1,5 @@
 import {
+  MAX_DRILL_NAME_LENGTH,
   MAX_DRILL_STEPS,
   type DrillStep,
   type DrillStepType,
@@ -134,4 +135,45 @@ export const parseParInput = (text: string): number | null => {
 
   const seconds = roundPar(Number(trimmed.replace(',', '.')));
   return isStepPar(seconds) ? seconds : null;
+};
+
+/**
+ * One reason a draft cannot be saved yet. A missing name and an empty
+ * step list are what a shooter runs into building a drill; the editor's
+ * own limits (the name field's length, `addStep`) keep a draft clear of
+ * the other two.
+ */
+export type DrillDraftProblem =
+  'name-missing' | 'name-too-long' | 'no-steps' | 'too-many-steps';
+
+/**
+ * Everything that stops a draft from being saved, the name's problem
+ * before the steps', or an empty list when the storage service would
+ * accept it. The service still enforces the same rules on save; this is
+ * what lets the editor say what is missing before the shooter tries.
+ *
+ * The name is measured the way it is stored: trimmed. A step's type, par
+ * and id are not checked here — the functions above only ever produce
+ * steps the service accepts.
+ */
+export const drillDraftProblems = (
+  name: string,
+  steps: readonly DrillStep[],
+): readonly DrillDraftProblem[] => {
+  const problems: DrillDraftProblem[] = [];
+  const storedName = name.trim();
+
+  if (storedName.length === 0) {
+    problems.push('name-missing');
+  } else if (storedName.length > MAX_DRILL_NAME_LENGTH) {
+    problems.push('name-too-long');
+  }
+
+  if (steps.length === 0) {
+    problems.push('no-steps');
+  } else if (steps.length > MAX_DRILL_STEPS) {
+    problems.push('too-many-steps');
+  }
+
+  return problems;
 };
