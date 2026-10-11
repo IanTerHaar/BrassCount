@@ -15,6 +15,11 @@ type ButtonProps = {
   onPress: () => void;
   variant?: ButtonVariant;
   disabled?: boolean;
+  /**
+   * What a screen reader announces in place of `label`. Set it when the
+   * visible label repeats on the screen and needs its subject spelled out.
+   */
+  accessibilityLabel?: string;
   style?: StyleProp<ViewStyle>;
   testID?: string;
 };
@@ -24,6 +29,7 @@ export const Button = ({
   onPress,
   variant = 'primary',
   disabled = false,
+  accessibilityLabel,
   style,
   testID,
 }: ButtonProps) => {
@@ -48,6 +54,7 @@ export const Button = ({
       onPress={onPress}
       disabled={disabled}
       accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
       accessibilityState={{ disabled }}
       style={style ? [containerStyle, style] : containerStyle}
     >
