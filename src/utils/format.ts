@@ -62,3 +62,73 @@ export const formatDate = (iso: string): string => {
 /** `3` → `3 drills`, `1` → `1 drill`. */
 export const pluralize = (count: number, noun: string): string =>
   `${count} ${noun}${count === 1 ? '' : 's'}`;
+
+const MS_PER_MINUTE = 60_000;
+const MS_PER_HOUR = 60 * MS_PER_MINUTE;
+const MS_PER_DAY = 24 * MS_PER_HOUR;
+
+/**
+ * The units a time ago is counted in, largest first. A month is 30 days
+ * and a year 365: close enough for "about how long ago".
+ */
+const TIME_AGO_UNITS = [
+  { name: 'year', short: 'y', ms: 365 * MS_PER_DAY },
+  { name: 'month', short: 'mo', ms: 30 * MS_PER_DAY },
+  { name: 'week', short: 'w', ms: 7 * MS_PER_DAY },
+  { name: 'day', short: 'd', ms: MS_PER_DAY },
+  { name: 'hour', short: 'h', ms: MS_PER_HOUR },
+  { name: 'minute', short: 'm', ms: MS_PER_MINUTE },
+] as const;
+
+type TimeAgo =
+  /** Under a minute ago, or stamped by a clock that was ahead of this one. */
+  { unit: null } | { unit: (typeof TIME_AGO_UNITS)[number]; count: number };
+
+/**
+ * How long before `now` an ISO-8601 time was, in whole counts of the
+ * largest unit that fits. `null` when the text is not a time.
+ */
+const timeAgo = (iso: string, now: number): TimeAgo | null => {
+  const then = Date.parse(iso);
+  if (Number.isNaN(then)) {
+    return null;
+  }
+
+  const elapsed = now - then;
+  const unit = TIME_AGO_UNITS.find(candidate => elapsed >= candidate.ms);
+  return unit === undefined
+    ? { unit: null }
+    : { unit, count: Math.floor(elapsed / unit.ms) };
+};
+
+/**
+ * ISO-8601 → how long ago that was: `just now`, `5m ago`, `3h ago`,
+ * `2d ago`, `3w ago`, `4mo ago`, `2y ago`. `—` when the text is not a time.
+ */
+export const formatTimeAgo = (
+  iso: string,
+  now: number = Date.now(),
+): string => {
+  const ago = timeAgo(iso, now);
+  if (ago === null) {
+    return '—';
+  }
+  return ago.unit === null ? 'just now' : `${ago.count}${ago.unit.short} ago`;
+};
+
+/**
+ * The same as a screen reader should say it: `2 days ago`, `just now`. A
+ * bare `2d ago` is read as a number and a stray letter.
+ */
+export const spokenTimeAgo = (
+  iso: string,
+  now: number = Date.now(),
+): string => {
+  const ago = timeAgo(iso, now);
+  if (ago === null) {
+    return 'at an unknown time';
+  }
+  return ago.unit === null
+    ? 'just now'
+    : `${pluralize(ago.count, ago.unit.name)} ago`;
+};

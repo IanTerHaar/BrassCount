@@ -29,6 +29,12 @@ type ListRowProps = {
   /** Hairline separator below the row. Omit on the last row of a group. */
   divided?: boolean;
   /**
+   * What a screen reader says for a pressable row, in place of its title
+   * and subtitle read as written. For a subtitle of abbreviations such as
+   * `Best 4.21s · 2d ago`.
+   */
+  accessibilityLabel?: string;
+  /**
    * Extra things a screen reader can do with a pressable row, for actions
    * that are otherwise only reachable by a gesture such as a swipe.
    */
@@ -76,6 +82,7 @@ export const ListRow = ({
   onPress,
   chevron,
   divided = false,
+  accessibilityLabel,
   accessibilityActions,
   onAccessibilityAction,
   testID,
@@ -99,7 +106,9 @@ export const ListRow = ({
           {title}
         </Typography>
         {subtitle ? (
-          <Typography variant="caption" color="textTertiary" numberOfLines={1}>
+          // Two lines, so a subtitle that fits at the default text size
+          // wraps at the largest one instead of losing its end.
+          <Typography variant="caption" color="textTertiary" numberOfLines={2}>
             {subtitle}
           </Typography>
         ) : null}
@@ -125,6 +134,7 @@ export const ListRow = ({
         testID={testID}
         onPress={onPress}
         accessibilityRole="button"
+        accessibilityLabel={accessibilityLabel}
         accessibilityActions={accessibilityActions}
         onAccessibilityAction={onAccessibilityAction}
         activeOpacity={0.6}
