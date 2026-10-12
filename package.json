@@ -79,6 +79,9 @@
       "eslint-plugin-ft-flow": {
         "eslint": "^9.39.4"
       }
+    },
+    "@istanbuljs/load-nyc-config": {
+      "js-yaml": "^4.3.2"
     }
   }
 }
