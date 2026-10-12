@@ -15,31 +15,48 @@ export type UseDrillsResult = {
   state: DrillsState;
   /** Read the drills again from scratch, e.g. from a "Try again" button. */
   reload: () => void;
+  /**
+   * Delete the stored drill with this id and take it off the list. Never
+   * rejects: resolves to `false`, with the list as it was, when the drill
+   * could not be deleted.
+   */
+  deleteDrill: (id: string) => Promise<boolean>;
 };
 
 /**
  * Loads every saved drill for the Drills screen, and reads them again each
- * time the screen regains focus: drills are created, edited and deleted on
- * the editor pushed over it while this screen stays mounted.
+ * time the screen regains focus: drills are created and edited on the
+ * editor pushed over it while this screen stays mounted.
  *
  * A refresh keeps the current list on screen until the new one arrives, so
  * coming back does not flash a loading state — and keeps it if the read
  * fails. Only a first load (or a `reload`) that fails shows an error.
+ *
+ * A drill deleted here leaves the list as soon as storage has let go of
+ * it. Its sessions are left alone: deleting a drill does not delete the
+ * runs recorded with it.
  */
 export const useDrills = (): UseDrillsResult => {
   const [state, setState] = useState<DrillsState>({ status: 'loading' });
   // Bumped by every load, and when the screen loses focus, so a read that
   // has been superseded never lands.
   const loadIdRef = useRef(0);
+  // Ids deleted from here. A read that began before a delete can answer
+  // after it, still holding the drill; ids are never reused, so leaving
+  // these out of every later answer is always right.
+  const deletedIdsRef = useRef<ReadonlySet<string>>(new Set());
 
   const load = useCallback(async () => {
     const loadId = ++loadIdRef.current;
 
     try {
-      const drills = await DrillStorageService.loadAll();
+      const stored = await DrillStorageService.loadAll();
       if (loadIdRef.current !== loadId) {
         return;
       }
+      const drills = stored.filter(
+        drill => !deletedIdsRef.current.has(drill.id),
+      );
       setState({ status: 'ready', drills });
     } catch {
       if (loadIdRef.current !== loadId) {
@@ -71,5 +88,25 @@ export const useDrills = (): UseDrillsResult => {
     load().catch(() => {});
   }, [load]);
 
-  return { state, reload };
+  const deleteDrill = useCallback(async (id: string): Promise<boolean> => {
+    try {
+      await DrillStorageService.deleteById(id);
+    } catch {
+      // The drill is still stored, so it stays listed; the caller says so.
+      return false;
+    }
+
+    deletedIdsRef.current = new Set([...deletedIdsRef.current, id]);
+    setState(previous =>
+      previous.status === 'ready'
+        ? {
+            status: 'ready',
+            drills: previous.drills.filter(drill => drill.id !== id),
+          }
+        : previous,
+    );
+    return true;
+  }, []);
+
+  return { state, reload, deleteDrill };
 };

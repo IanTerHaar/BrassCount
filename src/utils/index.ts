@@ -6,5 +6,6 @@ export * from './guards';
 export * from './profile';
 export * from './serialQueue';
 export * from './session';
+export * from './swipe';
 export * from './timestamp';
 export * from './id';
