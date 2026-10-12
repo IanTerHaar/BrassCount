@@ -3,6 +3,7 @@ export * from './drill';
 export * from './drillDraft';
 export * from './format';
 export * from './guards';
+export * from './history';
 export * from './profile';
 export * from './serialQueue';
 export * from './session';

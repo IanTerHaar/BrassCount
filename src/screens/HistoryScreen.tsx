@@ -1,5 +1,3 @@
-import { useMemo } from 'react';
-
 import { StyleSheet, View } from 'react-native';
 
 import { useNavigation } from '@react-navigation/native';
@@ -13,21 +11,24 @@ import { ListRow } from '@components/ListRow';
 import { Screen } from '@components/Screen';
 import { SectionHeader } from '@components/SectionHeader';
 import { Typography } from '@components/Typography';
-import { previewHistory, type SessionResult } from '@constants/previewData';
+import {
+  useDrillHistory,
+  type DrillHistoryState,
+} from '@hooks/useDrillHistory';
 import { useThemedStyles } from '@hooks/useTheme';
-import { formatSeconds, pluralize } from '@utils/format';
+import {
+  formatSeconds,
+  formatTimeAgo,
+  pluralize,
+  spokenSeconds,
+  spokenTimeAgo,
+} from '@utils/format';
+import type { DrillHistorySummary } from '@utils/history';
 
 type Nav = NativeStackNavigationProp<HistoryStackParamList, 'HistoryList'>;
 
-/** Rolled-up view of every run logged against a single drill. */
-type DrillHistorySummary = {
-  drillId: string;
-  drillName: string;
-  runs: number;
-  bestTime: number;
-  /** ISO-8601 of the most recent run, used to sort the list. */
-  lastRun: string;
-};
+/** Stands in for a counter until the history has been read. */
+const NO_COUNT = '—';
 
 const createStyles = (theme: Theme) =>
   StyleSheet.create({
@@ -44,60 +45,181 @@ const createStyles = (theme: Theme) =>
       width: StyleSheet.hairlineWidth,
       backgroundColor: theme.colors.border,
     },
+    loading: {
+      alignItems: 'center',
+      paddingVertical: theme.spacing.xxl,
+    },
   });
 
-/** Group history rows by drill so the tab lists drills, not raw runs. */
-const summarizeHistory = (history: SessionResult[]): DrillHistorySummary[] => {
-  const groups = new Map<string, SessionResult[]>();
+/** The line under a drill's name: `3 runs · Best 4.21s · 2d ago`. */
+const describeSummary = (summary: DrillHistorySummary, now: number): string =>
+  [
+    pluralize(summary.runCount, 'run'),
+    `Best ${formatSeconds(summary.bestTime)}`,
+    formatTimeAgo(summary.lastRunAt, now),
+  ].join(' · ');
 
-  for (const result of history) {
-    const existing = groups.get(result.drillId) ?? [];
-    existing.push(result);
-    groups.set(result.drillId, existing);
-  }
+/**
+ * The whole row as a screen reader should say it. The best time is said
+ * to the hundredth, the same figure the row shows.
+ */
+const speakSummary = (summary: DrillHistorySummary, now: number): string =>
+  [
+    summary.drillName,
+    pluralize(summary.runCount, 'run'),
+    `best ${spokenSeconds(Number(summary.bestTime.toFixed(2)))}`,
+    `last run ${spokenTimeAgo(summary.lastRunAt, now)}`,
+  ].join(', ');
 
-  return Array.from(groups.values())
-    .map(runs => ({
-      drillId: runs[0].drillId,
-      drillName: runs[0].drillName,
-      runs: runs.length,
-      bestTime: Math.min(...runs.map(run => run.timeSeconds)),
-      lastRun: runs.reduce(
-        (latest, run) => (run.completedAt > latest ? run.completedAt : latest),
-        runs[0].completedAt,
-      ),
-    }))
-    .sort((a, b) => (a.lastRun < b.lastRun ? 1 : -1));
+type CounterProps = {
+  /** `null` until the history has been read. */
+  count: number | null;
+  noun: string;
+  highlighted?: boolean;
+  testID: string;
 };
 
-/** Rough relative time — "today", "2d ago", "3w ago". */
-const timeAgo = (iso: string, now = new Date()): string => {
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) {
-    return '—';
-  }
+/** One counter in the totals card, read out as a phrase ("3 runs"). */
+const Counter = ({
+  count,
+  noun,
+  highlighted = false,
+  testID,
+}: CounterProps) => {
+  const styles = useThemedStyles(createStyles);
 
-  const days = Math.floor((now.getTime() - then) / 86_400_000);
-  if (days <= 0) {
-    return 'today';
-  }
-  if (days === 1) {
-    return 'yesterday';
-  }
-  if (days < 7) {
-    return `${days}d ago`;
-  }
-  if (days < 30) {
-    return `${Math.floor(days / 7)}w ago`;
-  }
-  return `${Math.floor(days / 30)}mo ago`;
+  return (
+    <View
+      style={styles.summaryCell}
+      accessible
+      accessibilityLabel={
+        count === null ? `${noun}s not loaded` : pluralize(count, noun)
+      }
+    >
+      <Typography variant="overline" color="textSecondary">
+        {`${noun}s`.toUpperCase()}
+      </Typography>
+      <Typography
+        variant="metric"
+        color={highlighted ? 'primary' : undefined}
+        testID={testID}
+      >
+        {count === null ? NO_COUNT : String(count)}
+      </Typography>
+    </View>
+  );
 };
 
+type DrillHistoryListProps = {
+  state: DrillHistoryState;
+  /** Open the runs recorded for one drill. */
+  onOpen: (summary: DrillHistorySummary) => void;
+  onRetry: () => void;
+};
+
+/** What sits under the "Drills" header: the list, or why there is none. */
+const DrillHistoryList = ({
+  state,
+  onOpen,
+  onRetry,
+}: DrillHistoryListProps) => {
+  const styles = useThemedStyles(createStyles);
+
+  if (state.status === 'loading') {
+    return (
+      <Card>
+        <View style={styles.loading}>
+          <Typography
+            variant="body"
+            color="textSecondary"
+            testID="text-history-loading"
+          >
+            Loading your history…
+          </Typography>
+        </View>
+      </Card>
+    );
+  }
+
+  if (state.status === 'error') {
+    return (
+      <Card>
+        {/* Announced: it takes the place of the loading line on its own. */}
+        <View accessibilityLiveRegion="polite">
+          <EmptyState
+            icon="chart"
+            title="Could not load your history"
+            message="Something went wrong reading it from this device."
+            actionLabel="Try again"
+            onActionPress={onRetry}
+            testID="state-history-error"
+          />
+        </View>
+      </Card>
+    );
+  }
+
+  const { summaries } = state;
+
+  if (summaries.length === 0) {
+    return (
+      <Card>
+        <EmptyState
+          icon="chart"
+          title="Nothing here yet"
+          message="Run a drill from the timer and it will appear here."
+          testID="state-history-empty"
+        />
+      </Card>
+    );
+  }
+
+  // One reading of the clock for the whole list, so two drills run at the
+  // same moment never show different ages.
+  const now = Date.now();
+
+  // Mapped inside the card rather than virtualised, like the Drills list:
+  // there is one row per drill, not per run, and a library built by hand
+  // stays small. If libraries grow into the hundreds this becomes a
+  // `FlatList`.
+  return (
+    <Card flush>
+      {summaries.map((summary, i) => (
+        <ListRow
+          key={summary.drillId}
+          title={summary.drillName}
+          subtitle={describeSummary(summary, now)}
+          accessibilityLabel={speakSummary(summary, now)}
+          onPress={() => onOpen(summary)}
+          divided={i < summaries.length - 1}
+          testID={`row-history-${summary.drillId}`}
+        />
+      ))}
+    </Card>
+  );
+};
+
+/**
+ * Every drill that has been run, read from `SessionStorageService` and
+ * grouped by drill: how many runs, the best time and how long ago the last
+ * one was, most recently run first. Above the list, the number of runs and
+ * of drills they were made against.
+ *
+ * A drill that has never been run is not listed. A drill deleted after it
+ * was run still is, since its runs are kept, under a stand-in name.
+ */
 export const HistoryScreen = () => {
   const styles = useThemedStyles(createStyles);
   const navigation = useNavigation<Nav>();
+  const { state, reload } = useDrillHistory();
 
-  const drillSummaries = useMemo(() => summarizeHistory(previewHistory), []);
+  const ready = state.status === 'ready';
+
+  const openDrill = (summary: DrillHistorySummary) =>
+    navigation.navigate('HistoryDetail', {
+      drillId: summary.drillId,
+      drillName: summary.drillName,
+    });
 
   return (
     <Screen
@@ -108,60 +230,26 @@ export const HistoryScreen = () => {
     >
       <Card>
         <View style={styles.summaryRow}>
-          <View style={styles.summaryCell}>
-            <Typography variant="overline" color="textSecondary">
-              RUNS
-            </Typography>
-            <Typography variant="metric">
-              {String(previewHistory.length)}
-            </Typography>
-          </View>
+          <Counter
+            count={ready ? state.runCount : null}
+            noun="run"
+            testID="text-history-run-count"
+          />
 
           <View style={styles.summaryDivider} />
 
-          <View style={styles.summaryCell}>
-            <Typography variant="overline" color="textSecondary">
-              DRILLS
-            </Typography>
-            <Typography variant="metric" color="primary">
-              {String(drillSummaries.length)}
-            </Typography>
-          </View>
+          <Counter
+            count={ready ? state.summaries.length : null}
+            noun="drill"
+            highlighted
+            testID="text-history-drill-count"
+          />
         </View>
       </Card>
 
       <View>
         <SectionHeader title="Drills" />
-
-        {drillSummaries.length === 0 ? (
-          <Card>
-            <EmptyState
-              icon="chart"
-              title="Nothing here yet"
-              message="Run a drill from the timer and it will appear here."
-            />
-          </Card>
-        ) : (
-          <Card flush>
-            {drillSummaries.map((summary, i) => (
-              <ListRow
-                key={summary.drillId}
-                title={summary.drillName}
-                subtitle={`${pluralize(summary.runs, 'run')} · Best ${formatSeconds(
-                  summary.bestTime,
-                )} · ${timeAgo(summary.lastRun)}`}
-                onPress={() =>
-                  navigation.navigate('HistoryDetail', {
-                    drillId: summary.drillId,
-                    drillName: summary.drillName,
-                  })
-                }
-                divided={i < drillSummaries.length - 1}
-                testID={`row-history-${summary.drillId}`}
-              />
-            ))}
-          </Card>
-        )}
+        <DrillHistoryList state={state} onOpen={openDrill} onRetry={reload} />
       </View>
     </Screen>
   );
