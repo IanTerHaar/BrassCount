@@ -1,10 +1,13 @@
 import {
   formatDate,
+  formatDateTime,
   formatDecibels,
   formatElapsed,
   formatSeconds,
+  formatSignedSeconds,
   formatTimeAgo,
   pluralize,
+  spokenDateTime,
   spokenDecibels,
   spokenSeconds,
   spokenTimeAgo,
@@ -57,6 +60,59 @@ describe('spokenSeconds', () => {
 
   it('says exactly one second in the singular', () => {
     expect(spokenSeconds(1)).toBe('1 second');
+  });
+});
+
+describe('formatSignedSeconds', () => {
+  it('shows a longer time with a plus and a shorter one with a minus', () => {
+    expect(formatSignedSeconds(0.7)).toBe('+0.70s');
+    expect(formatSignedSeconds(-0.08)).toBe('-0.08s');
+    expect(formatSignedSeconds(12.346)).toBe('+12.35s');
+  });
+
+  it('shows no difference without a sign', () => {
+    expect(formatSignedSeconds(0)).toBe('0.00s');
+  });
+
+  it('never shows a signed zero for a difference too small to show', () => {
+    expect(formatSignedSeconds(-0.004)).toBe('0.00s');
+    expect(formatSignedSeconds(0.004)).toBe('0.00s');
+  });
+});
+
+describe('date and time', () => {
+  const MORNING = '2026-08-15T09:05:00.000Z';
+  const LATER = '2026-08-15T09:47:00.000Z';
+
+  it('shows the date, then the time of day', () => {
+    const shown = formatDateTime(MORNING);
+
+    expect(shown.startsWith(`${formatDate(MORNING)} · `)).toBe(true);
+    // Hour and minute, in whichever of 12 or 24 hour form the device uses.
+    expect(shown.split(' · ')[1]).toMatch(/\d{1,2}\D\d{2}/);
+  });
+
+  it('tells two runs made on the same day apart', () => {
+    expect(formatDate(MORNING)).toBe(formatDate(LATER));
+    expect(formatDateTime(MORNING)).not.toBe(formatDateTime(LATER));
+  });
+
+  it('shows a dash for text that is not a time', () => {
+    expect(formatDateTime('invalid-date')).toBe('—');
+  });
+
+  it('words a date and time for a screen reader', () => {
+    const spoken = spokenDateTime(MORNING);
+
+    expect(spoken).toContain('2026');
+    expect(spoken).toContain(' at ');
+    // The month in full, and no dot for the reader to trip on.
+    expect(spoken).toContain('August');
+    expect(spoken).not.toContain('·');
+  });
+
+  it('says so when the text is not a time', () => {
+    expect(spokenDateTime('invalid-date')).toBe('an unknown date');
   });
 });
 
