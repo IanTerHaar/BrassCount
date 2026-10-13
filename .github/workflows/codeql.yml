@@ -100,15 +100,16 @@ jobs:
       # CodeQL analyses what is compiled after `init`. Compiling everything
       # once before it leaves only the app's own sources to compile afterwards,
       # which keeps the libraries under node_modules out of the results. The
-      # Kotlin compiler runs inside Gradle here so that no compiler daemon is
-      # left running for the second build to reuse: CodeQL would not see it.
+      # Kotlin compiler daemon this build starts is stopped at the end, so the
+      # second build has to start its own: CodeQL would not see the app
+      # compiled by one that was already running.
       - name: Compile the libraries the app depends on
         if: matrix.build-mode == 'manual'
         working-directory: android
         run: |
           chmod +x gradlew
-          ./gradlew --no-daemon -Pkotlin.compiler.execution.strategy=in-process \
-            :app:compileDebugKotlin :app:compileDebugJavaWithJavac
+          ./gradlew --no-daemon :app:compileDebugKotlin :app:compileDebugJavaWithJavac
+          pkill -f KotlinCompileDaemon || true
 
       # Initializes the CodeQL tools for scanning.
       - name: Initialize CodeQL
