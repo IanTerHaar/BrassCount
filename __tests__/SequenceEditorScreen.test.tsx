@@ -762,6 +762,169 @@ describe('SequenceEditorScreen', () => {
     });
   });
 
+  describe('reordering steps', () => {
+    /** Build a draw, a shot and a shot, with a par on the first two. */
+    const buildThreeSteps = async (tree: ReactTestRenderer) => {
+      await addSteps(tree, 3);
+      await choosePreset(tree, 0, '1.5');
+      await choosePreset(tree, 1, '0.25');
+    };
+
+    it('is not offered until there are two steps to swap', async () => {
+      const { tree } = await renderEditor();
+      expect(has(tree, 'btn-reorder-steps')).toBe(false);
+
+      await addSteps(tree, 1);
+      expect(has(tree, 'btn-reorder-steps')).toBe(false);
+
+      await addSteps(tree, 1);
+      expect(has(tree, 'btn-reorder-steps')).toBe(true);
+    });
+
+    it('swaps the par and remove controls for move buttons, and back', async () => {
+      const { tree } = await renderEditor();
+      await addSteps(tree, 2);
+
+      await press(tree, 'btn-reorder-steps');
+
+      expect(has(tree, 'btn-par-step-0')).toBe(false);
+      expect(has(tree, 'btn-remove-step-0')).toBe(false);
+      expect(has(tree, 'btn-move-up-step-1')).toBe(true);
+      expect(has(tree, 'btn-move-down-step-0')).toBe(true);
+      expect(textOf(tree, 'btn-reorder-steps')).toBe('Done');
+
+      await press(tree, 'btn-reorder-steps');
+
+      expect(has(tree, 'btn-move-up-step-1')).toBe(false);
+      expect(has(tree, 'btn-par-step-0')).toBe(true);
+      expect(textOf(tree, 'btn-reorder-steps')).toBe('Reorder');
+    });
+
+    it('says what the reorder button does in either state', async () => {
+      const { tree } = await renderEditor();
+      await addSteps(tree, 2);
+      expect(spokenLabel(tree, 'btn-reorder-steps')).toBe('Reorder steps');
+
+      await press(tree, 'btn-reorder-steps');
+
+      expect(spokenLabel(tree, 'btn-reorder-steps')).toBe('Done reordering');
+    });
+
+    it('moves a step up, keeping its type and par', async () => {
+      const { tree } = await renderEditor();
+      await buildThreeSteps(tree);
+      await chooseType(tree, 2, 'reload');
+      await press(tree, 'btn-reorder-steps');
+
+      await press(tree, 'btn-move-up-step-2');
+      await press(tree, 'btn-reorder-steps');
+
+      expect(stepTypes(tree)).toEqual(['Draw', 'Reload', 'Shot']);
+      expect(stepPars(tree)).toEqual(['1.50s', '+ par', '0.25s']);
+    });
+
+    it('moves a step down, keeping its type and par', async () => {
+      const { tree } = await renderEditor();
+      await buildThreeSteps(tree);
+      await press(tree, 'btn-reorder-steps');
+
+      await press(tree, 'btn-move-down-step-0');
+      await press(tree, 'btn-reorder-steps');
+
+      expect(stepTypes(tree)).toEqual(['Shot', 'Draw', 'Shot']);
+      expect(stepPars(tree)).toEqual(['0.25s', '1.50s', '+ par']);
+    });
+
+    it('renumbers the steps, the preview and the line under the title', async () => {
+      const { tree } = await renderEditor();
+      await buildThreeSteps(tree);
+      await press(tree, 'btn-reorder-steps');
+
+      await press(tree, 'btn-move-down-step-0');
+      await press(tree, 'btn-move-down-step-1');
+
+      expect(textsUnder(first(tree, 'row-step-2'))[0]).toBe('3');
+      expect(textOf(tree, 'select-step-2')).toBe('Draw');
+      expect(textOf(tree, 'text-preview')).toBe(
+        'Shot 1 (0.25s)  →  Shot 2  →  Draw (1.50s)',
+      );
+      expect(subtitle(tree)).toBe('3 steps · 2 shots');
+    });
+
+    it('cannot move the first step up or the last step down', async () => {
+      const { tree } = await renderEditor();
+      await buildThreeSteps(tree);
+      await press(tree, 'btn-reorder-steps');
+
+      expect(isDisabled(tree, 'btn-move-up-step-0')).toBe(true);
+      expect(isDisabled(tree, 'btn-move-down-step-0')).toBe(false);
+      expect(isDisabled(tree, 'btn-move-up-step-2')).toBe(false);
+      expect(isDisabled(tree, 'btn-move-down-step-2')).toBe(true);
+
+      await press(tree, 'btn-move-up-step-0');
+      await press(tree, 'btn-move-down-step-2');
+
+      expect(stepTypes(tree)).toEqual(['Draw', 'Shot', 'Shot']);
+    });
+
+    it('names the step and the direction for a screen reader', async () => {
+      const { tree } = await renderEditor();
+      await buildThreeSteps(tree);
+      await press(tree, 'btn-reorder-steps');
+
+      expect(spokenLabel(tree, 'btn-move-up-step-2')).toBe(
+        'Move step 3, Shot 2, up',
+      );
+      expect(spokenLabel(tree, 'btn-move-down-step-0')).toBe(
+        'Move step 1, Draw, down',
+      );
+    });
+
+    it('tells a screen reader where the step went', async () => {
+      const { tree } = await renderEditor();
+      await buildThreeSteps(tree);
+      await press(tree, 'btn-reorder-steps');
+      const announce = jest
+        .spyOn(AccessibilityInfo, 'announceForAccessibility')
+        .mockClear();
+
+      await press(tree, 'btn-move-up-step-2');
+      await press(tree, 'btn-move-down-step-0');
+
+      expect(announce.mock.calls).toEqual([
+        ['Moved step 3, Shot 2, up to step 2'],
+        ['Moved step 1, Draw, down to step 2'],
+      ]);
+    });
+
+    it('says how to reorder under the Steps heading', async () => {
+      const { tree } = await renderEditor();
+      await addSteps(tree, 2);
+
+      await press(tree, 'btn-reorder-steps');
+
+      expect(allText(tree)).toContain(
+        'Use the arrows to move a step. Tap Done when the order is right.',
+      );
+    });
+
+    it('saves the drill in the new order', async () => {
+      const drill = await saveDrill(BILL_DRILL);
+      const { tree } = await renderEditor(drill.id);
+      await press(tree, 'btn-reorder-steps');
+
+      await press(tree, 'btn-move-down-step-0');
+      await press(tree, 'btn-save-drill');
+      await settle();
+
+      expect((await loadDrillById(drill.id))?.steps).toEqual([
+        drill.steps[1],
+        drill.steps[0],
+        drill.steps[2],
+      ]);
+    });
+  });
+
   describe('the preview', () => {
     it('shows the sequence in order with each par', async () => {
       const { tree } = await renderEditor();

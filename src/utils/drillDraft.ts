@@ -78,6 +78,36 @@ export const removeStep = (
   id: string,
 ): readonly DrillStep[] => steps.filter(step => step.id !== id);
 
+/**
+ * `steps` with the step that has this id moved to `toPosition`, counted
+ * from 0, and the steps between shifted along to make room. The step
+ * itself is kept as it is — id, type and par — so only the order changes.
+ *
+ * An id that is not in the list, or a position the list does not have,
+ * gives back `steps` unchanged.
+ */
+export const moveStep = (
+  steps: readonly DrillStep[],
+  id: string,
+  toPosition: number,
+): readonly DrillStep[] => {
+  const from = steps.findIndex(step => step.id === id);
+  const inRange =
+    Number.isInteger(toPosition) &&
+    toPosition >= 0 &&
+    toPosition < steps.length;
+  if (from < 0 || !inRange || from === toPosition) {
+    return steps;
+  }
+
+  const without = steps.filter((_, i) => i !== from);
+  return [
+    ...without.slice(0, toPosition),
+    steps[from],
+    ...without.slice(toPosition),
+  ];
+};
+
 /** `steps` with the type of one step changed; its par is kept. */
 export const changeStepType = (
   steps: readonly DrillStep[],
