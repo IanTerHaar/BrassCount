@@ -10,6 +10,7 @@ import {
   StartSequenceError,
   startSequence,
 } from '../src/services/startSequence';
+import { CAPTURE_CLOCK_SETTLE_MS } from '../src/types/audio';
 
 const createFakePlayer = (
   play: BeepPlayer['play'] = async () => {},
@@ -26,6 +27,16 @@ beforeEach(() => {
 
 afterEach(() => {
   jest.useRealTimers();
+});
+
+describe('the delay window', () => {
+  it('never beeps before the microphone clock has settled', () => {
+    // The Timer opens the microphone, then starts this delay. A beep any
+    // sooner would be timed against readings whose clock may still change.
+    expect(DEFAULT_MIN_DELAY_MS).toBeGreaterThanOrEqual(
+      CAPTURE_CLOCK_SETTLE_MS,
+    );
+  });
 });
 
 describe('startSequence', () => {
@@ -118,6 +129,63 @@ describe('startSequence', () => {
     await expect(
       startSequence({ player, signal: controller.signal }),
     ).rejects.toThrow(StartSequenceAbortError);
+    expect(player.play).not.toHaveBeenCalled();
+  });
+
+  it('calls onTrigger once, at the instant the beep is requested', async () => {
+    const calls: { at: number; played: number }[] = [];
+    const player = createFakePlayer();
+    const promise = startSequence({
+      player,
+      random: () => 0,
+      onTrigger: () =>
+        calls.push({ at: Date.now(), played: player.play.mock.calls.length }),
+    });
+
+    await jest.advanceTimersByTimeAsync(DEFAULT_MIN_DELAY_MS - 1);
+    expect(calls).toEqual([]);
+
+    await jest.advanceTimersByTimeAsync(1);
+    const { startedAt } = await promise;
+
+    // Before the player is asked, so a slow player does not delay it.
+    expect(calls).toEqual([{ at: startedAt, played: 0 }]);
+  });
+
+  it('does not call onTrigger when aborted during the wait', async () => {
+    const onTrigger = jest.fn();
+    const controller = new AbortController();
+    const promise = startSequence({
+      player: createFakePlayer(),
+      signal: controller.signal,
+      onTrigger,
+    });
+    const rejects = expect(promise).rejects.toThrow(StartSequenceAbortError);
+
+    controller.abort();
+    await rejects;
+    await jest.advanceTimersByTimeAsync(DEFAULT_MAX_DELAY_MS);
+
+    expect(onTrigger).not.toHaveBeenCalled();
+  });
+
+  it('rejects without sounding the beep when onTrigger throws', async () => {
+    const boom = new Error('run was not armed');
+    const player = createFakePlayer();
+    const promise = startSequence({
+      player,
+      random: () => 0,
+      onTrigger: () => {
+        throw boom;
+      },
+    });
+    const rejects = expect(promise).rejects.toMatchObject({
+      name: 'StartSequenceError',
+      cause: boom,
+    });
+
+    await jest.advanceTimersByTimeAsync(DEFAULT_MIN_DELAY_MS);
+    await rejects;
     expect(player.play).not.toHaveBeenCalled();
   });
 

@@ -4,9 +4,11 @@ import {
   AUDIO_AMPLITUDE_EVENT,
   AUDIO_CAPTURE_ERROR_EVENT,
   AudioCaptureError,
+  getCaptureTime,
   hasMicrophonePermission,
   isAudioCaptureActive,
   requestMicrophonePermission,
+  resolveMicrophonePermission,
   startAudioCapture,
   stopAudioCapture,
   subscribeToAmplitude,
@@ -100,6 +102,43 @@ describe('audioCapture service', () => {
       mockedCheck.mockResolvedValue(true);
 
       await expect(hasMicrophonePermission()).resolves.toBe(true);
+    });
+  });
+
+  describe('resolveMicrophonePermission', () => {
+    it('reports granted without asking when the permission is already held', async () => {
+      mockedCheck.mockResolvedValue(true);
+
+      await expect(resolveMicrophonePermission()).resolves.toBe('granted');
+      expect(mockedRequest).not.toHaveBeenCalled();
+    });
+
+    it('asks when the permission is missing and reports the answer', async () => {
+      mockedCheck.mockResolvedValue(false);
+      mockedRequest.mockResolvedValue(
+        PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN,
+      );
+
+      await expect(resolveMicrophonePermission()).resolves.toBe('blocked');
+      expect(mockedRequest).toHaveBeenCalledTimes(1);
+    });
+
+    it('settles the permission through the source it is given', async () => {
+      const source = {
+        hasPermission: jest.fn(async () => false),
+        requestPermission: jest.fn(async () => 'denied' as const),
+      };
+
+      await expect(resolveMicrophonePermission(source)).resolves.toBe('denied');
+      expect(mockedCheck).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getCaptureTime', () => {
+    it('reads the clock the readings are stamped with', () => {
+      mockedNativeAudioCapture.now.mockReturnValue(123_456.789);
+
+      expect(getCaptureTime()).toBe(123_456.789);
     });
   });
 
@@ -201,6 +240,8 @@ describe('audioCapture service', () => {
         peakDb: -0.9,
         timestamp: 1023.2,
         peakTimestamp: 1011.6,
+        onsetTimestamp: 1011.4,
+        frameTimed: true,
       };
 
       const unsubscribe = subscribeToAmplitude(listener);
@@ -291,6 +332,19 @@ describe('audioCapture service', () => {
       mockedNativeAudioCapture.isCapturing.mockReturnValue(true);
 
       expect(isAudioCaptureActive()).toBe(false);
+    });
+
+    it('throws UNSUPPORTED_PLATFORM for the capture clock without touching the native module', () => {
+      let error: unknown;
+      try {
+        getCaptureTime();
+      } catch (err) {
+        error = err;
+      }
+
+      expect(error).toBeInstanceOf(AudioCaptureError);
+      expect(error).toMatchObject({ code: 'UNSUPPORTED_PLATFORM' });
+      expect(mockedNativeAudioCapture.now).not.toHaveBeenCalled();
     });
   });
 });

@@ -5,6 +5,8 @@ export interface Spec extends TurboModule {
   start(): Promise<void>;
   stop(): Promise<void>;
   isCapturing(): boolean;
+  /** The capture clock, read now: monotonic milliseconds. */
+  now(): number;
 
   addListener(eventName: string): void;
   removeListeners(count: number): void;
