@@ -7,6 +7,7 @@ export * from './EmptyState';
 export * from './Icon';
 export * from './ListRow';
 export * from './ParPickerSheet';
+export * from './RunCard';
 export * from './Screen';
 export * from './SectionHeader';
 export * from './Select';

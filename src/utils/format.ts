@@ -59,6 +59,54 @@ export const formatDate = (iso: string): string => {
   });
 };
 
+/**
+ * A difference in seconds with its sign: `+0.12s`, `-0.08s`. One that
+ * rounds to nothing reads `0.00s`, never `-0.00s`.
+ */
+export const formatSignedSeconds = (seconds: number): string => {
+  const shown = seconds.toFixed(2);
+  const value = Number(shown);
+
+  if (value === 0) {
+    return '0.00s';
+  }
+  return `${value > 0 ? '+' : ''}${shown}s`;
+};
+
+/** The time of day of a valid date, in the device's own 12 or 24 hour form. */
+const timeOfDay = (date: Date): string =>
+  date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+
+/** ISO-8601 → `15 Aug 2026 · 14:32`. `—` when the text is not a time. */
+export const formatDateTime = (iso: string): string => {
+  const date = new Date(iso);
+
+  if (Number.isNaN(date.getTime())) {
+    return '—';
+  }
+
+  return `${formatDate(iso)} · ${timeOfDay(date)}`;
+};
+
+/**
+ * The same as a screen reader should say it: `15 August 2026 at 14:32`. The
+ * short month and the dot between the two halves are not read out well.
+ */
+export const spokenDateTime = (iso: string): string => {
+  const date = new Date(iso);
+
+  if (Number.isNaN(date.getTime())) {
+    return 'an unknown date';
+  }
+
+  const day = date.toLocaleDateString(undefined, {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
+  return `${day} at ${timeOfDay(date)}`;
+};
+
 /** `3` → `3 drills`, `1` → `1 drill`. */
 export const pluralize = (count: number, noun: string): string =>
   `${count} ${noun}${count === 1 ? '' : 's'}`;
