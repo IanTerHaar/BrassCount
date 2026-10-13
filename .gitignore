@@ -93,3 +93,4 @@ copilot-instructions.md
 # Claude Code
 .claude/settings.local.json
 .claude/worktrees/
+.claude/agent-memory/
