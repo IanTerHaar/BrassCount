@@ -1,6 +1,8 @@
 package com.brasscount.app.audio
 
+import kotlin.math.sin
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AudioLevelsTest {
@@ -189,6 +191,137 @@ class AudioLevelsTest {
 
     // No sample exceeds zero, so the peak index stays at frame 0: 3 frames back.
     assertEquals(END_MS - 0.068027, reading.peakTimestampMs, TIME_DELTA_MS)
+  }
+
+  // --- onset ---
+
+  @Test
+  fun `an impulse starts where it peaks`() {
+    val buffer = ShortArray(FULL_BUFFER_FRAMES).also { it[512] = 12000 }
+
+    val reading = computeReading(buffer, buffer.size, END_NANOS)
+
+    assertEquals(reading.peakTimestampMs, reading.onsetTimestampMs, 0.0)
+  }
+
+  @Test
+  fun `a sound starts at the first sample that reaches half its peak`() {
+    val buffer = shortArrayOf(0, 6000, 0, 10000)
+
+    val reading = computeReading(buffer, buffer.size, END_NANOS)
+
+    // Onset is frame 1 (2 frames before the end); the peak is the last frame.
+    assertEquals(END_MS - 0.045351, reading.onsetTimestampMs, TIME_DELTA_MS)
+    assertEquals(END_MS, reading.peakTimestampMs, 0.0)
+  }
+
+  @Test
+  fun `a sample at exactly half the peak is the onset`() {
+    val buffer = shortArrayOf(5000, 0, 10000, 0)
+
+    val reading = computeReading(buffer, buffer.size, END_NANOS)
+
+    // Frame 0 of 4: 3 frames (68 027 ns) before the end.
+    assertEquals(END_MS - 0.068027, reading.onsetTimestampMs, TIME_DELTA_MS)
+  }
+
+  @Test
+  fun `a sample just under half the peak is not the onset`() {
+    val buffer = shortArrayOf(4999, 0, 10000, 0)
+
+    val reading = computeReading(buffer, buffer.size, END_NANOS)
+
+    assertEquals(reading.peakTimestampMs, reading.onsetTimestampMs, 0.0)
+  }
+
+  @Test
+  fun `room noise in front of a sound is stepped over`() {
+    val buffer = ShortArray(FULL_BUFFER_FRAMES) { index -> if (index < 500) 1000 else 0 }
+    buffer[500] = 20000
+
+    val reading = computeReading(buffer, buffer.size, END_NANOS)
+
+    // Frame 500: 523 frames (11 859 410 ns) before the end.
+    assertEquals(END_MS - 11.859410, reading.onsetTimestampMs, TIME_DELTA_MS)
+  }
+
+  @Test
+  fun `the onset counts a negative sample by its magnitude`() {
+    val buffer = shortArrayOf(0, -6000, 0, 10000)
+
+    val reading = computeReading(buffer, buffer.size, END_NANOS)
+
+    assertEquals(END_MS - 0.045351, reading.onsetTimestampMs, TIME_DELTA_MS)
+  }
+
+  @Test
+  fun `a tone that fades in starts inside its fade, long before it peaks`() {
+    // A 1 kHz tone that begins at frame 300 and takes 5 ms (220 frames) to
+    // reach full level, as the start beep does.
+    val toneStart = 300
+    val fadeFrames = 220
+    val buffer =
+      ShortArray(FULL_BUFFER_FRAMES) { index ->
+        if (index < toneStart) {
+          0
+        } else {
+          val sinceStart = index - toneStart
+          val gain = minOf(1.0, sinceStart.toDouble() / fadeFrames)
+          (16000 * gain * sin(2 * Math.PI * 1000 * sinceStart / 44100.0)).toInt().toShort()
+        }
+      }
+
+    val reading = computeReading(buffer, buffer.size, END_NANOS)
+
+    val toneStartMs = END_MS - (FULL_BUFFER_FRAMES - 1 - toneStart) * 1000.0 / 44100
+    // Half the level is passed half-way up the fade, at the next crest of
+    // the tone: between 2.5 and 3.0 ms in.
+    assertTrue(reading.onsetTimestampMs >= toneStartMs + 2.5)
+    assertTrue(reading.onsetTimestampMs <= toneStartMs + 3.0)
+    // The peak is somewhere in the steady part of the tone, milliseconds on.
+    assertTrue(reading.peakTimestampMs > reading.onsetTimestampMs + 2.0)
+  }
+
+  @Test
+  fun `noise at more than half the level of a sound is taken for its start`() {
+    // The onset is judged against the buffer's own peak, so a loud room
+    // moves it early. The beep is only looked for well clear of the room.
+    val buffer = ShortArray(FULL_BUFFER_FRAMES) { index -> if (index < 500) 1500 else 0 }
+    buffer[500] = 2500
+
+    val reading = computeReading(buffer, buffer.size, END_NANOS)
+
+    // Frame 0 of 1024: 1023 frames (23 197 278 ns) before the end.
+    assertEquals(END_MS - 23.197278, reading.onsetTimestampMs, TIME_DELTA_MS)
+  }
+
+  @Test
+  fun `the most negative sample as the peak still finds its half-level onset`() {
+    val buffer = shortArrayOf(0, -16383, -16384, Short.MIN_VALUE)
+
+    val reading = computeReading(buffer, buffer.size, END_NANOS)
+
+    // 16384 is exactly half of 32768: frame 2, one frame before the end.
+    assertEquals(END_MS - 0.022675, reading.onsetTimestampMs, TIME_DELTA_MS)
+    assertEquals(END_MS, reading.peakTimestampMs, 0.0)
+  }
+
+  @Test
+  fun `a silent buffer times its onset at the first frame`() {
+    val buffer = ShortArray(4)
+
+    val reading = computeReading(buffer, buffer.size, END_NANOS)
+
+    assertEquals(END_MS - 0.068027, reading.onsetTimestampMs, TIME_DELTA_MS)
+  }
+
+  @Test
+  fun `the onset is never after the peak`() {
+    val buffer = shortArrayOf(100, 9000, -9000, 9000, 200)
+
+    val reading = computeReading(buffer, buffer.size, END_NANOS)
+
+    assertEquals(reading.peakTimestampMs, reading.onsetTimestampMs, 0.0)
   }
 
   // --- timestamps ---

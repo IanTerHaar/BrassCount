@@ -32,6 +32,13 @@ export interface StartSequenceOptions {
   signal?: AbortSignal;
   random?: () => number;
   player?: BeepPlayer;
+  /**
+   * Called at the instant the beep is requested, the same moment
+   * `startedAt` is taken. `startedAt` is wall-clock time; a caller that
+   * times the run on another clock (the drill run engine uses the
+   * microphone's) stamps its own here.
+   */
+  onTrigger?: () => void;
 }
 
 export interface StartSequenceResult {
@@ -67,6 +74,7 @@ export async function startSequence(
     signal,
     random = Math.random,
     player = sharedPlayer,
+    onTrigger,
   } = options;
 
   if (!Number.isFinite(minDelayMs) || !Number.isFinite(maxDelayMs)) {
@@ -106,6 +114,12 @@ export async function startSequence(
       signal?.removeEventListener('abort', onAbort);
 
       const startedAt = Date.now();
+      try {
+        onTrigger?.();
+      } catch (err) {
+        reject(new StartSequenceError('The start callback failed', err));
+        return;
+      }
 
       player.play(beep).then(
         () => resolve({ startedAt, delayMs }),

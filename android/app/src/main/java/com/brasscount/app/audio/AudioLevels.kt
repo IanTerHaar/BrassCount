@@ -21,8 +21,20 @@ internal const val MAX_PCM_16_AMPLITUDE = 32768.0
 /** Reported for digital silence instead of negative infinity. */
 internal const val MIN_DB = -160.0
 
+/**
+ * A sound is taken to start at the first sample that reaches half the level
+ * of the loudest one in its buffer. Low enough to land on the rising edge of
+ * a tone that takes a few milliseconds to reach full level, high enough to
+ * step over the room noise in front of it, as long as that noise is under
+ * half the level of the sound.
+ *
+ * Half a level is 6 dB: HALF_LEVEL_DB in src/utils/runDetection.ts says the
+ * same thing on the JS side, and the two must stay in step.
+ */
+internal const val ONSET_PEAK_DIVISOR = 2
+
 private const val MAX_DB = 0.0
-private const val NANOS_PER_SECOND = 1_000_000_000L
+internal const val NANOS_PER_SECOND = 1_000_000_000L
 private const val NANOS_PER_MILLI = 1_000_000.0
 
 /**
@@ -37,6 +49,7 @@ internal data class Reading(
   val peakDb: Double,
   val timestampMs: Double,
   val peakTimestampMs: Double,
+  val onsetTimestampMs: Double,
 )
 
 /**
@@ -49,11 +62,11 @@ internal fun captureBufferSizeBytes(minBufferSizeBytes: Int): Int =
 /**
  * Computes the RMS and peak levels of the first [framesRead] samples of
  * [buffer]; anything after them is stale data from an earlier read.
- * [readEndNanos] is the monotonic time the read returned, i.e. the capture
- * time of the last frame read. [framesRead] must be in 1..buffer.size — the
- * caller drops empty and failed reads before getting here.
+ * [bufferEndNanos] is the monotonic capture time of the last frame read (see
+ * CaptureClock). [framesRead] must be in 1..buffer.size — the caller drops
+ * empty and failed reads before getting here.
  */
-internal fun computeReading(buffer: ShortArray, framesRead: Int, readEndNanos: Long): Reading {
+internal fun computeReading(buffer: ShortArray, framesRead: Int, bufferEndNanos: Long): Reading {
   var sumOfSquares = 0.0
   var peakSample = 0
   var peakIndex = 0
@@ -68,19 +81,45 @@ internal fun computeReading(buffer: ShortArray, framesRead: Int, readEndNanos: L
     }
   }
   val rms = sqrt(sumOfSquares / framesRead)
-  // Walk back from the end of the buffer to the frame that held the peak,
-  // so an impulse is timed to the sample rather than to the buffer.
-  val framesAfterPeak = (framesRead - 1 - peakIndex).toLong()
-  val peakNanos = readEndNanos - framesAfterPeak * NANOS_PER_SECOND / SAMPLE_RATE_HZ
+  val onsetIndex = onsetIndex(buffer, peakIndex, peakSample)
   return Reading(
     amplitude = normalize(rms),
     db = toDbfs(rms),
     peak = normalize(peakSample.toDouble()),
     peakDb = toDbfs(peakSample.toDouble()),
-    timestampMs = readEndNanos / NANOS_PER_MILLI,
-    peakTimestampMs = peakNanos / NANOS_PER_MILLI,
+    timestampMs = nanosToMillis(bufferEndNanos),
+    peakTimestampMs = nanosToMillis(frameNanos(peakIndex, framesRead, bufferEndNanos)),
+    onsetTimestampMs = nanosToMillis(frameNanos(onsetIndex, framesRead, bufferEndNanos)),
   )
 }
+
+/**
+ * Index of the first sample at or above half of [peakSample], looking no
+ * further than the peak itself at [peakIndex]. The peak of an impulse is its
+ * own onset to within a few samples; the peak of a tone can be anywhere in
+ * the buffer, long after the tone began, and this finds where it began.
+ */
+private fun onsetIndex(buffer: ShortArray, peakIndex: Int, peakSample: Int): Int {
+  for (i in 0 until peakIndex) {
+    if (abs(buffer[i].toInt()) * ONSET_PEAK_DIVISOR >= peakSample) {
+      return i
+    }
+  }
+  return peakIndex
+}
+
+/**
+ * Capture time of the frame at [index] in a read of [framesRead] frames
+ * whose last frame was captured at [bufferEndNanos]: walks back from the end
+ * of the buffer, so a sound is timed to the sample rather than to the buffer.
+ */
+private fun frameNanos(index: Int, framesRead: Int, bufferEndNanos: Long): Long {
+  val framesAfter = (framesRead - 1 - index).toLong()
+  return bufferEndNanos - framesAfter * NANOS_PER_SECOND / SAMPLE_RATE_HZ
+}
+
+/** Monotonic nanoseconds as the fractional milliseconds JS is given. */
+internal fun nanosToMillis(nanos: Long): Double = nanos / NANOS_PER_MILLI
 
 /** Scales a raw 16-bit sample magnitude to 0..1. */
 internal fun normalize(level: Double): Double = (level / MAX_PCM_16_AMPLITUDE).coerceIn(0.0, 1.0)

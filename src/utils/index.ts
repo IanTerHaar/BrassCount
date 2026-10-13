@@ -5,6 +5,7 @@ export * from './format';
 export * from './guards';
 export * from './history';
 export * from './profile';
+export * from './runDetection';
 export * from './serialQueue';
 export * from './session';
 export * from './swipe';

@@ -6,3 +6,4 @@ export * from './beepPlayer';
 export * from './startSequence';
 export * from './audioCapture';
 export * from './calibrationCapture';
+export * from './drillRunEngine';

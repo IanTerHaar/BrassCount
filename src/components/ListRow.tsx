@@ -8,7 +8,7 @@ import {
   type AccessibilityActionInfo,
 } from 'react-native';
 
-import type { Theme } from '@/theme/theme';
+import type { SemanticColors, Theme } from '@/theme/theme';
 import { useThemedStyles } from '@hooks/useTheme';
 
 import { Icon } from './Icon';
@@ -19,6 +19,8 @@ type ListRowProps = {
   subtitle?: string;
   /** Right-aligned value. Rendered mono so columns line up down the list. */
   value?: string;
+  /** Colour of `value`, for one that is good or bad news. */
+  valueColor?: keyof SemanticColors;
   /** Small leading badge — the step number in a sequence, for example. */
   index?: number;
   left?: ReactNode;
@@ -29,9 +31,10 @@ type ListRowProps = {
   /** Hairline separator below the row. Omit on the last row of a group. */
   divided?: boolean;
   /**
-   * What a screen reader says for a pressable row, in place of its title
-   * and subtitle read as written. For a subtitle of abbreviations such as
-   * `Best 4.21s · 2d ago`.
+   * What a screen reader says for the row, in place of its title, subtitle
+   * and value read as written. For text made of abbreviations such as
+   * `Best 4.21s · 2d ago`. A row that is not pressable is read as one item
+   * when this is set.
    */
   accessibilityLabel?: string;
   /**
@@ -76,6 +79,7 @@ export const ListRow = ({
   title,
   subtitle,
   value,
+  valueColor = 'textSecondary',
   index,
   left,
   right,
@@ -115,7 +119,7 @@ export const ListRow = ({
       </View>
 
       {value ? (
-        <Typography variant="metricSmall" color="textSecondary">
+        <Typography variant="metricSmall" color={valueColor}>
           {value}
         </Typography>
       ) : null}
@@ -146,7 +150,12 @@ export const ListRow = ({
   }
 
   return (
-    <View testID={testID} style={style}>
+    <View
+      testID={testID}
+      accessible={accessibilityLabel !== undefined}
+      accessibilityLabel={accessibilityLabel}
+      style={style}
+    >
       {content}
     </View>
   );

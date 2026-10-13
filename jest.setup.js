@@ -17,6 +17,7 @@ jest.mock('./src/specs/NativeAudioCapture', () => ({
     start: jest.fn(() => Promise.resolve()),
     stop: jest.fn(() => Promise.resolve()),
     isCapturing: jest.fn(() => false),
+    now: jest.fn(() => 0),
     addListener: jest.fn(),
     removeListeners: jest.fn(),
   },

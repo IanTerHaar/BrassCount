@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioRecord
+import android.media.AudioTimestamp
 import android.media.MediaRecorder
 import android.os.Process
 import android.os.SystemClock
@@ -124,6 +125,13 @@ class AudioCaptureModule(private val reactContext: ReactApplicationContext) :
   }
 
   override fun isCapturing(): Boolean = isRunning.get()
+
+  /**
+   * The clock every reading is stamped with, read now. JS has no other way
+   * to place one of its own moments (the start beep being requested) on the
+   * same timeline as the sounds the microphone hears.
+   */
+  override fun now(): Double = nanosToMillis(SystemClock.elapsedRealtimeNanos())
 
   override fun invalidate() {
     reactContext.removeLifecycleEventListener(this)
@@ -252,6 +260,8 @@ class AudioCaptureModule(private val reactContext: ReactApplicationContext) :
     }
 
     val buffer = ShortArray(FRAMES_PER_BUFFER)
+    val clock = CaptureClock()
+    val hardwareTimestamp = AudioTimestamp()
     while (isRunning.get() && audioRecord === recorder) {
       val framesRead =
         try {
@@ -261,8 +271,9 @@ class AudioCaptureModule(private val reactContext: ReactApplicationContext) :
           // blocked in read() and released the recorder underneath us.
           break
         }
-      // Taken as soon as the blocking read returns, so it marks the capture
-      // time of the buffer's last frame.
+      // Taken as soon as the blocking read returns: the latest the buffer's
+      // last frame can have been captured, and the time it is given when the
+      // device has no frame clock (see CaptureClock).
       val readEndNanos = SystemClock.elapsedRealtimeNanos()
       if (framesRead <= 0) {
         if (isRunning.get() && audioRecord === recorder) {
@@ -270,7 +281,9 @@ class AudioCaptureModule(private val reactContext: ReactApplicationContext) :
         }
         break
       }
-      emitAmplitude(computeReading(buffer, framesRead, readEndNanos))
+      val bufferTime =
+        clock.onRead(framesRead, readEndNanos, frameAnchor(recorder, hardwareTimestamp))
+      emitAmplitude(computeReading(buffer, framesRead, bufferTime.endNanos), bufferTime.frameTimed)
     }
 
     // The loop can exit on its own (read error) without stop() ever being
@@ -295,7 +308,26 @@ class AudioCaptureModule(private val reactContext: ReactApplicationContext) :
     }
   }
 
-  private fun emitAmplitude(reading: Reading) {
+  /**
+   * Asks the audio hardware which frame it has reached and when, on the same
+   * clock as [now]. Null when the device cannot say, which is common in the
+   * first buffers of a capture and permanent on some devices. [out] is the
+   * platform's own holder, filled in place and reused from read to read.
+   */
+  private fun frameAnchor(recorder: AudioRecord, out: AudioTimestamp): FrameAnchor? =
+    try {
+      if (recorder.getTimestamp(out, AudioTimestamp.TIMEBASE_BOOTTIME) == AudioRecord.SUCCESS) {
+        FrameAnchor(out.framePosition, out.nanoTime)
+      } else {
+        null
+      }
+    } catch (e: IllegalStateException) {
+      // The recorder was released underneath this thread; the next read
+      // fails and ends the loop.
+      null
+    }
+
+  private fun emitAmplitude(reading: Reading, frameTimed: Boolean) {
     val payload =
       Arguments.createMap().apply {
         putDouble("amplitude", reading.amplitude)
@@ -304,6 +336,8 @@ class AudioCaptureModule(private val reactContext: ReactApplicationContext) :
         putDouble("peakDb", reading.peakDb)
         putDouble("timestamp", reading.timestampMs)
         putDouble("peakTimestamp", reading.peakTimestampMs)
+        putDouble("onsetTimestamp", reading.onsetTimestampMs)
+        putBoolean("frameTimed", frameTimed)
       }
     emitToJs(EVENT_AMPLITUDE, payload)
   }

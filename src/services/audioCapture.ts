@@ -127,6 +127,29 @@ export async function hasMicrophonePermission(): Promise<boolean> {
   }
 }
 
+/** The part of this service that settles the microphone permission. */
+export type MicrophonePermissionSource = {
+  hasPermission: () => Promise<boolean>;
+  requestPermission: () => Promise<MicrophonePermissionStatus>;
+};
+
+/**
+ * Where the microphone permission stands once the user has had the chance
+ * to grant it: `granted` straight away when it already is, otherwise the
+ * outcome of asking. Shared by everything that opens the microphone, so
+ * the dialog is only ever shown when it is needed.
+ */
+export async function resolveMicrophonePermission(
+  source: MicrophonePermissionSource = {
+    hasPermission: hasMicrophonePermission,
+    requestPermission: requestMicrophonePermission,
+  },
+): Promise<MicrophonePermissionStatus> {
+  return (await source.hasPermission())
+    ? 'granted'
+    : source.requestPermission();
+}
+
 /**
  * Start the native capture loop. Resolves once recording has begun;
  * rejects with `AudioCaptureError` if microphone permission is missing
@@ -169,6 +192,18 @@ export function isAudioCaptureActive(): boolean {
     return false;
   }
   return NativeAudioCapture.isCapturing();
+}
+
+/**
+ * The clock every reading is stamped with, read now, in monotonic
+ * milliseconds. It is how a moment that happens in JS — the start beep
+ * being requested — is placed on the same timeline as the sounds the
+ * microphone hears; `Date.now()` is a different clock and cannot be
+ * compared with a reading. Works whether or not capture is running.
+ */
+export function getCaptureTime(): number {
+  assertAndroid();
+  return NativeAudioCapture.now();
 }
 
 /**
@@ -218,6 +253,7 @@ export const AudioCaptureService = {
   start: startAudioCapture,
   stop: stopAudioCapture,
   isActive: isAudioCaptureActive,
+  now: getCaptureTime,
   subscribeToAmplitude,
   subscribeToErrors: subscribeToAudioCaptureErrors,
 };

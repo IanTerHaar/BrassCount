@@ -5,6 +5,7 @@ import { CALIBRATION_LISTEN_MS } from '@utils/calibration';
 import {
   AudioCaptureError,
   AudioCaptureService,
+  resolveMicrophonePermission,
   type AudioCaptureServiceType,
 } from './audioCapture';
 
@@ -130,9 +131,7 @@ async function ensureMicrophonePermission(
 ): Promise<void> {
   let status: MicrophonePermissionStatus;
   try {
-    status = (await audio.hasPermission())
-      ? 'granted'
-      : await audio.requestPermission();
+    status = await resolveMicrophonePermission(audio);
   } catch (err) {
     throw new CalibrationCaptureError(
       'Failed to get microphone permission',

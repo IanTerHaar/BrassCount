@@ -5,8 +5,8 @@
  *
  * All timestamps are monotonic milliseconds (Android
  * `SystemClock.elapsedRealtimeNanos()`, so they carry sub-millisecond
- * precision). They are only comparable to other readings from the same
- * capture session — not wall-clock time.
+ * precision). They are comparable to other readings from the same capture
+ * session and to `AudioCaptureService.now()` — not to wall-clock time.
  */
 export interface AmplitudeReading {
   /** Normalized RMS amplitude for this buffer, from 0 (silence) to 1 (full scale). */
@@ -25,7 +25,35 @@ export interface AmplitudeReading {
    * within the buffer instead of rounding it to the buffer's end.
    */
   peakTimestamp: number;
+  /**
+   * When this buffer's sound began: the first sample to reach half the
+   * level of its loudest one. The same instant as `peakTimestamp` for an
+   * impulse; for a tone, which can peak anywhere in the buffer, it is where
+   * the tone started. Use it to time the start beep.
+   */
+  onsetTimestamp: number;
+  /**
+   * Whether the timestamps were read off the audio hardware's own count of
+   * frames, which does not depend on when the buffer was handed over.
+   * `false` when the device has no such count, or has not been heard from
+   * for a while, and each buffer was stamped as its read returned instead,
+   * which can be off by the length of a hardware burst (around 20 ms).
+   */
+  frameTimed: boolean;
 }
+
+/**
+ * How long after capture starts its timestamps are still settling, in
+ * milliseconds. The native module starts out stamping buffers as their
+ * reads return and moves to the hardware frame clock once it has enough of
+ * its timestamps to trust, which steps the timeline back once, by the input
+ * latency. Nothing may be timed against a reading from before this: open
+ * the microphone at least this long before the moment that matters.
+ *
+ * Mirrors `FRAME_CLOCK_ADOPTION_FRAMES` and `ANCHOR_WINDOW` in
+ * `CaptureClock.kt`, which decide it.
+ */
+export const CAPTURE_CLOCK_SETTLE_MS = 750;
 
 /** Outcome of a runtime microphone permission request or check. */
 export type MicrophonePermissionStatus = 'granted' | 'denied' | 'blocked';
