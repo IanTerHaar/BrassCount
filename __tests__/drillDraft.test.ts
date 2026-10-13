@@ -11,6 +11,7 @@ import {
   canAddStep,
   changeStepType,
   drillDraftProblems,
+  moveStep,
   nextStepType,
   parseParInput,
   removeStep,
@@ -152,6 +153,61 @@ describe('removeStep', () => {
     removeStep(steps, 'a');
 
     expect(steps).toEqual([DRAW, FIRST_SHOT]);
+  });
+});
+
+describe('moveStep', () => {
+  it('moves a step up to an earlier position', () => {
+    expect(moveStep(STEPS, 'c', 0)).toEqual([SECOND_SHOT, DRAW, FIRST_SHOT]);
+  });
+
+  it('moves a step down to a later position', () => {
+    expect(moveStep(STEPS, 'a', 1)).toEqual([FIRST_SHOT, DRAW, SECOND_SHOT]);
+  });
+
+  it('moves a step to the end of the list', () => {
+    expect(moveStep(STEPS, 'a', 2)).toEqual([FIRST_SHOT, SECOND_SHOT, DRAW]);
+  });
+
+  it('keeps the id, type and par of the step it moves', () => {
+    expect(moveStep(STEPS, 'a', 2)[2]).toBe(DRAW);
+  });
+
+  it('moves only one of two steps that look the same', () => {
+    const twins: readonly DrillStep[] = [
+      { id: 'x', type: 'shot', par: 0.2 },
+      { id: 'y', type: 'shot', par: 0.2 },
+      DRAW,
+    ];
+
+    expect(moveStep(twins, 'y', 2).map(step => step.id)).toEqual([
+      'x',
+      'a',
+      'y',
+    ]);
+  });
+
+  it('changes nothing when the step is already at that position', () => {
+    expect(moveStep(STEPS, 'b', 1)).toEqual(STEPS);
+  });
+
+  it('changes nothing for an id that is not in the list', () => {
+    expect(moveStep(STEPS, 'missing', 0)).toEqual(STEPS);
+  });
+
+  it.each([-1, 3, 1.5, Number.NaN])(
+    'changes nothing for a position the list does not have (%p)',
+    position => {
+      expect(moveStep(STEPS, 'a', position)).toEqual(STEPS);
+    },
+  );
+
+  it('leaves the list it was given untouched', () => {
+    const steps: readonly DrillStep[] = [DRAW, FIRST_SHOT, SECOND_SHOT];
+
+    moveStep(steps, 'a', 2);
+
+    expect(steps).toEqual([DRAW, FIRST_SHOT, SECOND_SHOT]);
   });
 });
 

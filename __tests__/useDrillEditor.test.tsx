@@ -281,6 +281,23 @@ describe('useDrillEditor saving', () => {
       expect(await loadDrills()).toEqual([saved]);
     });
 
+    it('stores the steps in the order they were moved to, each as it was', async () => {
+      const drill = await saveDrill(BILL_DRILL);
+      const editor = await renderEditor(drill.id);
+      act(() => {
+        editor.current().moveStep(drill.steps[0].id, 2);
+      });
+
+      const saved = await editor.save();
+
+      expect(saved?.steps).toEqual([
+        drill.steps[1],
+        drill.steps[2],
+        drill.steps[0],
+      ]);
+      expect(await loadDrillById(drill.id)).toEqual(saved);
+    });
+
     it('keeps the id of every step that was kept', async () => {
       const drill = await saveDrill(BILL_DRILL);
       const editor = await renderEditor(drill.id);
@@ -363,6 +380,7 @@ describe('useDrillEditor saving', () => {
         editor.current().addStep();
         editor.current().changeStepType(first.id, 'holster');
         editor.current().setStepPar(first.id, 3);
+        editor.current().moveStep(first.id, 1);
         editor.current().removeStep(first.id);
       });
     };

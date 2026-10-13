@@ -12,6 +12,7 @@ import {
   drillDraftProblems,
   addStep as withStepAdded,
   changeStepType as withStepType,
+  moveStep as withStepMoved,
   removeStep as withoutStep,
   setStepPar as withStepPar,
   type DrillDraftProblem,
@@ -65,6 +66,11 @@ export type UseDrillEditorResult = {
   /** Add an untimed step at the end: a draw first, a shot after that. */
   addStep: () => void;
   removeStep: (id: string) => void;
+  /**
+   * Move a step to `toPosition`, counted from 0, keeping its id, type and
+   * par. A position the list does not have is ignored.
+   */
+  moveStep: (id: string, toPosition: number) => void;
   changeStepType: (id: string, type: DrillStepType) => void;
   /**
    * Set a step's par in seconds, or clear it with `undefined`. A par the
@@ -193,6 +199,14 @@ export const useDrillEditor = (drillId?: string): UseDrillEditorResult => {
     [whileEditable],
   );
 
+  const moveStep = useCallback(
+    (id: string, toPosition: number) =>
+      whileEditable(() =>
+        setSteps(previous => withStepMoved(previous, id, toPosition)),
+      ),
+    [whileEditable],
+  );
+
   const changeStepType = useCallback(
     (id: string, type: DrillStepType) =>
       whileEditable(() =>
@@ -268,6 +282,7 @@ export const useDrillEditor = (drillId?: string): UseDrillEditorResult => {
     setName,
     addStep,
     removeStep,
+    moveStep,
     changeStepType,
     setStepPar,
     reload,
