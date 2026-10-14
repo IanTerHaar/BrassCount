@@ -24,6 +24,8 @@ type SelectProps<T extends string> = {
   onChange: (next: T) => void;
   /** Heading for the sheet that opens on press. */
   sheetTitle?: string;
+  /** The value cannot be changed: the trigger is dimmed and does not open. */
+  disabled?: boolean;
   testID?: string;
 };
 
@@ -41,6 +43,8 @@ const createStyles = (theme: Theme) =>
       borderColor: theme.colors.border,
       backgroundColor: theme.colors.surfaceElevated,
     },
+    // Matches a disabled `Button`.
+    triggerDisabled: { opacity: 0.5 },
     triggerText: { flex: 1 },
     // Points the chevron down without a second glyph.
     triggerChevron: { transform: [{ rotate: '90deg' }] },
@@ -96,6 +100,7 @@ export function Select<T extends string>({
   options,
   onChange,
   sheetTitle,
+  disabled = false,
   testID,
 }: Readonly<SelectProps<T>>) {
   const styles = useThemedStyles(createStyles);
@@ -119,10 +124,12 @@ export function Select<T extends string>({
 
       <Pressable
         onPress={() => setOpen(true)}
+        disabled={disabled}
         accessibilityRole="button"
         accessibilityLabel={label ?? sheetTitle ?? 'Select an option'}
         accessibilityValue={{ text: selected?.label }}
-        style={styles.trigger}
+        accessibilityState={{ disabled }}
+        style={[styles.trigger, disabled && styles.triggerDisabled]}
         testID={testID}
       >
         <View style={styles.triggerText}>

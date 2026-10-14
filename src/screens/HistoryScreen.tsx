@@ -51,13 +51,20 @@ const createStyles = (theme: Theme) =>
     },
   });
 
-/** The line under a drill's name: `3 runs · Best 4.21s · 2d ago`. */
+/**
+ * The line under a drill's name: `3 runs · Best 4.21s · 2d ago`. A drill
+ * whose every run was stopped early has no best, so it is left out.
+ */
 const describeSummary = (summary: DrillHistorySummary, now: number): string =>
   [
     pluralize(summary.runCount, 'run'),
-    `Best ${formatSeconds(summary.bestTime)}`,
+    summary.bestTime === null
+      ? null
+      : `Best ${formatSeconds(summary.bestTime)}`,
     formatTimeAgo(summary.lastRunAt, now),
-  ].join(' · ');
+  ]
+    .filter(part => part !== null)
+    .join(' · ');
 
 /**
  * The whole row as a screen reader should say it. The best time is said
@@ -67,9 +74,13 @@ const speakSummary = (summary: DrillHistorySummary, now: number): string =>
   [
     summary.drillName,
     pluralize(summary.runCount, 'run'),
-    `best ${spokenSeconds(Number(summary.bestTime.toFixed(2)))}`,
+    summary.bestTime === null
+      ? null
+      : `best ${spokenSeconds(Number(summary.bestTime.toFixed(2)))}`,
     `last run ${spokenTimeAgo(summary.lastRunAt, now)}`,
-  ].join(', ');
+  ]
+    .filter(part => part !== null)
+    .join(', ');
 
 type CounterProps = {
   /** `null` until the history has been read. */

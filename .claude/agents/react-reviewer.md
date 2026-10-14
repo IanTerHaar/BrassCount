@@ -96,7 +96,7 @@ The app's purpose is accurate timing. Treat these as blocking:
 
 - **`key={index}`** on a list that can be reordered, inserted into or deleted from.
 - **Duplicated state**: the same data in two `useState` calls, or state plus a computed copy.
-- **Fixture leakage**: new code importing `preview*` data from `@constants/previewData` where a real service already exists.
+- **Fixture leakage**: new code adding hard-coded display data where a real service exists (the old `previewData.ts` fixtures were removed).
 - **Direct AsyncStorage access from a component** instead of going through a service.
 
 ### MEDIUM -- Performance

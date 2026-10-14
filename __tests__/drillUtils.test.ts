@@ -1,6 +1,7 @@
 import { DRILL_STEP_TYPES, MAX_STEP_PAR_SECONDS } from '../src/types/drill';
 import {
   countShots,
+  describeDrill,
   isStepPar,
   roundPar,
   stepLabel,
@@ -131,4 +132,16 @@ describe('stepLabel', () => {
       ).toThrow(RangeError);
     },
   );
+});
+
+describe('describeDrill', () => {
+  it('gives the shots and the total par', () => {
+    expect(describeDrill({ shotCount: 3, totalPar: 2.5 })).toBe(
+      '3 shots · Par 2.50s',
+    );
+  });
+
+  it('leaves the par out of a drill with an untimed step', () => {
+    expect(describeDrill({ shotCount: 1, totalPar: null })).toBe('1 shot');
+  });
 });

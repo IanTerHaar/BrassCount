@@ -15,10 +15,11 @@ import {
   type SessionStorageOptions,
 } from '../src/services/sessionStorage';
 import { STORAGE_ROOT, StorageError } from '../src/services/storage';
-import { MAX_DRILL_STEPS, MAX_STEP_PAR_SECONDS } from '../src/types/drill';
+import { MAX_DRILL_STEPS } from '../src/types/drill';
 import {
   MAX_SESSION_SECONDS,
   MAX_SPLIT_LABEL_LENGTH,
+  MAX_SPLIT_PAR_SECONDS,
   type Session,
   type SessionInput,
   type SessionSplitInput,
@@ -46,6 +47,7 @@ const fakes = (timestamp: string = CREATED_AT): SessionStorageOptions => ({
 const mozambiqueRun: SessionInput = {
   drillId: 'drill-1',
   totalTime: 3.63,
+  completed: true,
   splits: [
     { stepId: 'step-1', label: 'Draw', par: 1.5, actual: 1.32 },
     { stepId: 'step-2', label: 'Shot 1', par: 0.25, actual: 0.22 },
@@ -75,11 +77,12 @@ const storedSession = (overrides: Partial<Session> = {}): Session => ({
   drillId: 'drill-1',
   createdAt: CREATED_AT,
   totalTime: 0.4,
+  completed: true,
   splits: [{ ...oneSplit, delta: -0.1 }],
   ...overrides,
 });
 
-const envelope = (session: unknown, schemaVersion: unknown = 1): unknown => ({
+const envelope = (session: unknown, schemaVersion: unknown = 2): unknown => ({
   schemaVersion,
   session,
 });
@@ -109,11 +112,11 @@ describe('sessionStorage service', () => {
   it('exposes its namespace, versions and the service handle', () => {
     expect(SESSION_NAMESPACE).toBe('sessions');
     expect(SESSION_STORAGE_VERSION).toBe('v1');
-    expect(SESSION_SCHEMA_VERSION).toBe(1);
+    expect(SESSION_SCHEMA_VERSION).toBe(2);
     expect(SessionStorageService).toEqual({
       namespace: 'sessions',
       version: 'v1',
-      schemaVersion: 1,
+      schemaVersion: 2,
       save: saveSession,
       loadAll: loadSessions,
       loadByDrillId: loadSessionsByDrillId,
@@ -132,6 +135,7 @@ describe('sessionStorage service', () => {
         drillId: 'drill-1',
         createdAt: CREATED_AT,
         totalTime: 3.63,
+        completed: true,
         splits: [
           {
             stepId: 'step-1',
@@ -173,7 +177,7 @@ describe('sessionStorage service', () => {
 
       expect(await AsyncStorage.getAllKeys()).toEqual([keyFor('id-1')]);
       expect(await readStored('id-1')).toEqual({
-        schemaVersion: 1,
+        schemaVersion: 2,
         session: saved,
       });
     });
@@ -215,8 +219,29 @@ describe('sessionStorage service', () => {
         drillId: 'drill-1',
         createdAt: CREATED_AT,
         totalTime: 3.63,
+        completed: true,
         splits: [{ ...oneSplit, delta: -0.1 }],
       });
+    });
+
+    it('keeps a run stopped early marked as incomplete', async () => {
+      const saved = await saveSession(
+        { ...mozambiqueRun, completed: false, splits: [oneSplit] },
+        fakes(),
+      );
+
+      expect(saved.completed).toBe(false);
+      expect(await loadSessionById(saved.id)).toEqual(saved);
+    });
+
+    it('takes a par counted in from silent steps that is over a step par limit', async () => {
+      // A 60 s draw and a 20 s holster in front of a shot with a par of 5 s.
+      const saved = await saveSession(
+        { ...mozambiqueRun, splits: [{ ...oneSplit, par: 85, actual: 70 }] },
+        fakes(),
+      );
+
+      expect(saved.splits[0]).toMatchObject({ par: 85, delta: -15 });
     });
 
     it('trims a split label', async () => {
@@ -233,6 +258,7 @@ describe('sessionStorage service', () => {
         {
           drillId: 'drill-1',
           totalTime: 0,
+          completed: true,
           splits: [{ ...oneSplit, actual: 0 }],
         },
         fakes(),
@@ -246,6 +272,7 @@ describe('sessionStorage service', () => {
       const input: SessionInput = {
         drillId: 'drill-1',
         totalTime: 0.4,
+        completed: true,
         splits: [{ ...oneSplit, label: ' Shot ' }],
       };
       const snapshot = JSON.parse(JSON.stringify(input));
@@ -269,6 +296,8 @@ describe('sessionStorage service', () => {
         'a total time that is not a number',
         { ...mozambiqueRun, totalTime: '3.63' },
       ],
+      ['no word on completion', { ...mozambiqueRun, completed: undefined }],
+      ['a completion that is not a flag', { ...mozambiqueRun, completed: 1 }],
       ['no splits', { ...mozambiqueRun, splits: [] }],
       ['splits that are not a list', { ...mozambiqueRun, splits: 'Shot' }],
       ['a split that is not an object', { ...mozambiqueRun, splits: ['Shot'] }],
@@ -376,10 +405,18 @@ describe('sessionStorage service', () => {
           entries: [],
         },
       ],
-      ['an unknown schema version', envelope(storedSession(), 2)],
+      ['an unknown schema version', envelope(storedSession(), 3)],
       ['a missing schema version', { session: storedSession() }],
       ['a session that is not an object', envelope('nope')],
       ['a session without an id', envelope(storedSession({ id: '' }))],
+      [
+        'a session that does not say whether it was completed',
+        envelope({ ...storedSession(), completed: undefined }),
+      ],
+      [
+        'a completion that is not a flag',
+        envelope({ ...storedSession(), completed: 'yes' }),
+      ],
       [
         'a session without a drill id',
         envelope({ ...storedSession(), drillId: undefined }),
@@ -445,6 +482,22 @@ describe('sessionStorage service', () => {
       await writeStored('stored-1', stored);
 
       expect(await loadSessionById('stored-1')).toBeNull();
+    });
+
+    it('reads a schema 1 session, which had no completion, as completed', async () => {
+      const { completed: _completed, ...withoutCompletion } = storedSession();
+      await writeStored('stored-1', envelope(withoutCompletion, 1));
+
+      expect(await loadSessionById('stored-1')).toEqual(storedSession());
+    });
+
+    it('reads a schema 1 session as completed whatever it carries', async () => {
+      await writeStored(
+        'stored-1',
+        envelope(storedSession({ completed: false }), 1),
+      );
+
+      expect((await loadSessionById('stored-1'))?.completed).toBe(true);
     });
 
     it('recomputes each delta instead of trusting the stored one', async () => {
@@ -520,7 +573,7 @@ describe('sessionStorage service', () => {
     it('skips corrupt and unreadable entries without failing the read', async () => {
       const saved = await saveSession(mozambiqueRun, fakes());
       await AsyncStorage.setItem(keyFor('corrupt'), '{not-json');
-      await writeStored('future', envelope(storedSession({ id: 'future' }), 2));
+      await writeStored('future', envelope(storedSession({ id: 'future' }), 3));
 
       expect(await loadSessions()).toEqual([saved]);
     });
@@ -663,10 +716,11 @@ describe('sessionStorage service', () => {
         {
           drillId: 'drill-1',
           totalTime: MAX_SESSION_SECONDS,
+          completed: true,
           splits: splits(MAX_DRILL_STEPS).map(split => ({
             ...split,
             label: longestLabel,
-            par: MAX_STEP_PAR_SECONDS,
+            par: MAX_SPLIT_PAR_SECONDS,
             actual: MAX_SESSION_SECONDS,
           })),
         },
@@ -707,7 +761,7 @@ describe('sessionStorage service', () => {
         'a par over the limit',
         {
           ...mozambiqueRun,
-          splits: [{ ...oneSplit, par: MAX_STEP_PAR_SECONDS + 0.01 }],
+          splits: [{ ...oneSplit, par: MAX_SPLIT_PAR_SECONDS + 0.01 }],
         },
       ],
       [

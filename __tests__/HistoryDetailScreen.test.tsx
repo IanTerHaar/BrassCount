@@ -73,8 +73,12 @@ const seedSession = (
   totalTime: number,
   at: string,
   splits: SessionSplitInput[] = splitsFor(totalTime),
+  completed = true,
 ): Promise<Session> =>
-  saveSession({ drillId, totalTime, splits }, { getTimestamp: () => at });
+  saveSession(
+    { drillId, totalTime, completed, splits },
+    { getTimestamp: () => at },
+  );
 
 /** Let pending storage reads and the state updates they cause land. */
 const settle = async (): Promise<void> => {
@@ -293,6 +297,40 @@ describe('HistoryDetailScreen', () => {
       expect(screenTexts(tree)).toContain('3 runs logged');
     });
 
+    it('leaves runs stopped early out of the best and the average', async () => {
+      const drill = await seedDrill('Bill Drill');
+      await seedSession(drill.id, 3, '2026-10-10T12:00:00.000Z');
+      await seedSession(
+        drill.id,
+        0.5,
+        '2026-10-05T12:00:00.000Z',
+        splitsFor(0.5),
+        false,
+      );
+      await seedSession(drill.id, 2, '2026-10-01T12:00:00.000Z');
+
+      const { tree } = await renderScreen(drill);
+
+      expect(totals(tree)).toEqual({ best: '2.00s', avg: '2.50s' });
+      // Every run is still logged.
+      expect(screenTexts(tree)).toContain('3 runs logged');
+    });
+
+    it('shows no best or average when every run was stopped early', async () => {
+      const drill = await seedDrill('Bill Drill');
+      await seedSession(
+        drill.id,
+        0.5,
+        '2026-10-05T12:00:00.000Z',
+        splitsFor(0.5),
+        false,
+      );
+
+      const { tree } = await renderScreen(drill);
+
+      expect(totals(tree)).toEqual({ best: '—', avg: '—' });
+    });
+
     it('says a single run in the singular', async () => {
       const drill = await seedDrill('Bill Drill');
       await seedSession(drill.id, 3.1, '2026-10-10T12:00:00.000Z');
@@ -358,6 +396,50 @@ describe('HistoryDetailScreen', () => {
       expect(textsOf(tree, `chip-delta-${middle.id}`)).toEqual([
         '+0.70S VS PREVIOUS',
       ]);
+    });
+
+    it('marks a run stopped early and compares it with nothing', async () => {
+      const drill = await seedDrill('Bill Drill');
+      const at = '2026-10-10T12:00:00.000Z';
+      const stopped = await seedSession(
+        drill.id,
+        0.5,
+        at,
+        splitsFor(0.5),
+        false,
+      );
+      await seedSession(drill.id, 2.9, '2026-10-05T12:00:00Z');
+
+      const { tree } = await renderScreen(drill);
+
+      expect(textsOf(tree, `chip-incomplete-${stopped.id}`)).toEqual([
+        'STOPPED EARLY',
+      ]);
+      expect(has(tree, `chip-delta-${stopped.id}`)).toBe(false);
+      expect(toggleOf(tree, stopped).props.accessibilityLabel).toBe(
+        `Run on ${spokenDateTime(at)}, 0.5 seconds, stopped early`,
+      );
+    });
+
+    it('compares a completed run with the completed run before it, past one stopped early', async () => {
+      const drill = await seedDrill('Bill Drill');
+      const newest = await seedSession(drill.id, 2.4, '2026-10-10T12:00:00Z');
+      await seedSession(
+        drill.id,
+        0.5,
+        '2026-10-05T12:00:00Z',
+        splitsFor(0.5),
+        false,
+      );
+      const oldest = await seedSession(drill.id, 2.9, '2026-10-01T12:00:00Z');
+
+      const { tree } = await renderScreen(drill);
+
+      expect(textsOf(tree, `chip-delta-${newest.id}`)).toEqual([
+        '-0.50S VS PREVIOUS',
+      ]);
+      expect(has(tree, `chip-incomplete-${newest.id}`)).toBe(false);
+      expect(has(tree, `chip-incomplete-${oldest.id}`)).toBe(false);
     });
 
     it('compares the first run of a drill with nothing', async () => {

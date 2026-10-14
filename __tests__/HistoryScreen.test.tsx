@@ -67,11 +67,13 @@ const seedSession = (
   drillId: string,
   totalTime: number,
   at: string,
+  completed = true,
 ): Promise<Session> =>
   saveSession(
     {
       drillId,
       totalTime,
+      completed,
       splits: [
         { stepId: 'step-1', label: 'Draw', par: 1.5, actual: totalTime / 2 },
         { stepId: 'step-2', label: 'Shot 1', actual: totalTime / 2 },
@@ -264,6 +266,35 @@ describe('HistoryScreen', () => {
         'Bill Drill',
         '3 runs · Best 2.46s · 2d ago',
       ]);
+    });
+
+    it('takes the best time from the completed runs only', async () => {
+      const drill = await seedDrill('Bill Drill');
+      await seedSession(drill.id, 1.1, '2026-10-10T12:00:00.000Z', false);
+      await seedSession(drill.id, 2.456, '2026-10-05T12:00:00.000Z');
+
+      const { tree } = await renderScreen();
+
+      expect(textsOf(tree, `row-history-${drill.id}`)).toEqual([
+        'Bill Drill',
+        '2 runs · Best 2.46s · 2d ago',
+      ]);
+    });
+
+    it('shows no best time for a drill whose every run was stopped early', async () => {
+      const drill = await seedDrill('Bill Drill');
+      await seedSession(drill.id, 1.1, '2026-10-10T12:00:00.000Z', false);
+
+      const { tree } = await renderScreen();
+
+      expect(textsOf(tree, `row-history-${drill.id}`)).toEqual([
+        'Bill Drill',
+        '1 run · 2d ago',
+      ]);
+      const [row] = byTestId(tree, `row-history-${drill.id}`);
+      expect(row.props.accessibilityLabel).toBe(
+        'Bill Drill, 1 run, last run 2 days ago',
+      );
     });
 
     it('says a single run in the singular', async () => {

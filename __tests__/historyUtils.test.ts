@@ -24,6 +24,7 @@ const session = (
   drillId: string,
   totalTime: number,
   createdAt: string,
+  completed = true,
 ): Session => {
   nextSessionNumber += 1;
   return {
@@ -31,6 +32,7 @@ const session = (
     drillId,
     createdAt,
     totalTime,
+    completed,
     splits: [
       { stepId: 'step-1', label: 'Shot 1', actual: totalTime, delta: null },
     ],
@@ -83,6 +85,46 @@ describe('summarizeDrillHistory', () => {
       { drillName: 'Bill Drill', runCount: 2, bestTime: 2.4 },
       { drillName: 'Mozambique', runCount: 1, bestTime: 1.2 },
     ]);
+  });
+
+  it('counts a run stopped early but leaves it out of the best time', () => {
+    const [summary] = summarizeDrillHistory(
+      [
+        session('a', 1.1, '2026-10-03T10:00:00.000Z', false),
+        session('a', 2.4, '2026-10-02T10:00:00.000Z'),
+      ],
+      [drill('a', 'Bill Drill')],
+    );
+
+    expect(summary).toMatchObject({
+      runCount: 2,
+      bestTime: 2.4,
+      lastRunAt: '2026-10-03T10:00:00.000Z',
+    });
+  });
+
+  it('has no best time for a drill whose every run was stopped early', () => {
+    const [summary] = summarizeDrillHistory(
+      [
+        session('a', 1.1, '2026-10-03T10:00:00.000Z', false),
+        session('a', 0.9, '2026-10-02T10:00:00.000Z', false),
+      ],
+      [drill('a', 'Bill Drill')],
+    );
+
+    expect(summary).toMatchObject({ runCount: 2, bestTime: null });
+  });
+
+  it('takes the best time from a completed run that comes after one stopped early', () => {
+    const [summary] = summarizeDrillHistory(
+      [
+        session('a', 1.1, '2026-10-02T10:00:00.000Z', false),
+        session('a', 2.4, '2026-10-03T10:00:00.000Z'),
+      ],
+      [drill('a', 'Bill Drill')],
+    );
+
+    expect(summary.bestTime).toBe(2.4);
   });
 
   it('leaves out a drill that has never been run', () => {
@@ -188,6 +230,22 @@ describe('summarizeRuns', () => {
     expect(totals).toEqual({ bestTime: 2, averageTime: 2.5 });
   });
 
+  it('leaves runs stopped early out of the best and the average', () => {
+    expect(
+      summarizeRuns([
+        session('a', 3, '2026-10-03T10:00:00.000Z'),
+        session('a', 0.5, '2026-10-02T10:00:00.000Z', false),
+        session('a', 2, '2026-10-01T10:00:00.000Z'),
+      ]),
+    ).toEqual({ bestTime: 2, averageTime: 2.5 });
+  });
+
+  it('has nothing to report when every run was stopped early', () => {
+    expect(
+      summarizeRuns([session('a', 0.5, '2026-10-02T10:00:00.000Z', false)]),
+    ).toBeNull();
+  });
+
   it('reports a single run as both its best and its average', () => {
     expect(
       summarizeRuns([session('a', 3.21, '2026-10-03T10:00:00.000Z')]),
@@ -232,6 +290,31 @@ describe('describeRuns', () => {
 
     // Slower than the run before, then faster, then nothing to compare.
     expect(runs.map(run => run.deltaToPrevious)).toEqual([0.7, -0.5, null]);
+  });
+
+  it('does not compare a run stopped early with anything', () => {
+    const runs = describeRuns([
+      session('a', 2, '2026-10-01T10:00:00.000Z'),
+      session('a', 0.5, '2026-10-02T10:00:00.000Z', false),
+    ]);
+
+    expect(runs.map(run => run.deltaToPrevious)).toEqual([null, null]);
+  });
+
+  it('compares a completed run with the completed run before it, past one stopped early', () => {
+    const runs = describeRuns([
+      session('a', 2.5, '2026-10-01T10:00:00.000Z'),
+      session('a', 0.5, '2026-10-02T10:00:00.000Z', false),
+      session('a', 2.2, '2026-10-03T10:00:00.000Z'),
+    ]);
+
+    expect(
+      runs.map(run => [run.session.totalTime, run.deltaToPrevious]),
+    ).toEqual([
+      [2.2, -0.3],
+      [0.5, null],
+      [2.5, null],
+    ]);
   });
 
   it('has nothing to compare a lone run with', () => {

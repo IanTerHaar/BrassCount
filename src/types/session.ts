@@ -1,16 +1,19 @@
+import { MAX_DRILL_STEPS, MAX_STEP_PAR_SECONDS } from './drill';
+
 /**
- * Domain model for a session: one completed run of a drill, with the time
- * every step took. Persistence is handled by `SessionStorageService`,
- * which is also what fills in the id, the timestamp and each split's
- * delta — callers hand it a `SessionInput`.
+ * Domain model for a session: one saved run of a drill, with the time
+ * every step heard took. A run stopped before its last step can be saved
+ * too, marked `completed: false`. Persistence is handled by
+ * `SessionStorageService`, which is also what fills in the id, the
+ * timestamp and each split's delta — callers hand it a `SessionInput`.
  */
 
 /**
  * Upper bounds on what a session may hold, alongside `MAX_DRILL_STEPS`
- * (a run has at most one split per step) and `MAX_STEP_PAR_SECONDS` from
- * the drill model. The storage service enforces them on every save and
- * read, so a stored time is always a number the history screens can add
- * up and a session is never too large to load.
+ * from the drill model (a run has at most one split per step). The
+ * storage service enforces them on every save and read, so a stored time
+ * is always a number the history screens can add up and a session is
+ * never too large to load.
  *
  * Raising a limit is safe. Lowering one hides every stored session over
  * the new value, so it needs a migration, not just a smaller number here.
@@ -19,6 +22,13 @@
 export const MAX_SESSION_SECONDS = 86_400;
 /** Longest a split label may be once trimmed, in characters. */
 export const MAX_SPLIT_LABEL_LENGTH = 40;
+/**
+ * Longest par a split may carry, in seconds. A step that cannot be heard
+ * (a draw, a holster) has its par counted into the next step that can, so
+ * a split's par can be the sum of every par in a drill: at most
+ * `MAX_DRILL_STEPS` steps of `MAX_STEP_PAR_SECONDS` each.
+ */
+export const MAX_SPLIT_PAR_SECONDS = MAX_DRILL_STEPS * MAX_STEP_PAR_SECONDS;
 
 /** How one step of a run went. */
 export interface SessionSplit {
@@ -31,8 +41,9 @@ export interface SessionSplit {
    */
   label: string;
   /**
-   * The step's par in seconds at the time of the run. Left off when the
-   * step was untimed.
+   * The par the step was judged against at the time of the run, in
+   * seconds: its own par plus that of any silent step in front of it (see
+   * `RunStep.par`). Left off when none of them had one.
    */
   par?: number;
   /**
@@ -56,8 +67,17 @@ export interface Session {
   drillId: string;
   /** ISO-8601 timestamp of when the run was saved. */
   createdAt: string;
-  /** Total elapsed time of the run, in seconds. */
+  /**
+   * Seconds from the start signal to the last step heard. For a run that
+   * was stopped early that is not the time of the whole drill.
+   */
   totalTime: number;
+  /**
+   * Whether every step the run listened for was heard. `false` for a run
+   * stopped early, which History lists but leaves out of its best and
+   * average times.
+   */
+  completed: boolean;
   /** One entry per step the run timed, in the order they happened. */
   splits: SessionSplit[];
 }
@@ -65,9 +85,10 @@ export interface Session {
 /** A split as a caller supplies it; the service works out `delta`. */
 export type SessionSplitInput = Omit<SessionSplit, 'delta'>;
 
-/** What a caller supplies to save a completed run. */
+/** What a caller supplies to save a run. */
 export interface SessionInput {
   drillId: string;
   totalTime: number;
+  completed: boolean;
   splits: readonly SessionSplitInput[];
 }

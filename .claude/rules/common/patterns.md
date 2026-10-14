@@ -31,6 +31,6 @@ Persistence goes through `createStorageNamespace<T>({ name, version })` in `src/
 - Build from the primitives in `src/components/` before writing new layout code.
 - Navigator headers stay off; route params are typed in `src/types/navigation.ts`.
 
-## Display Fixtures
+## No Display Fixtures
 
-`src/constants/previewData.ts` holds temporary fixtures and, for now, the drill domain types. When wiring a screen to real data, replace the `preview*` import with the real source and move any type that outlives the fixture into `src/types/`.
+Every screen reads real data through a service; the old `src/constants/previewData.ts` fixtures were deleted once the Timer read stored drills. Do not add fixtures back to stand in for data: domain types live in `src/types/`, and test data is seeded through the services in `__tests__/`.

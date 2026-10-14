@@ -18,15 +18,28 @@ export type DrillHistorySummary = {
   drillId: string;
   /** The drill's current name, or `DELETED_DRILL_NAME`. */
   drillName: string;
+  /** Every run, complete or stopped early. */
   runCount: number;
-  /** Shortest total time of any of the runs, in seconds. */
-  bestTime: number;
+  /**
+   * Shortest total time of the completed runs, in seconds. `null` when
+   * every run was stopped early: a run cut short is quicker without being
+   * better.
+   */
+  bestTime: number | null;
   /** ISO-8601 timestamp of the most recent run. */
   lastRunAt: string;
 };
 
 const isLater = (a: string, b: string): boolean =>
   Date.parse(a) > Date.parse(b);
+
+/** The shorter of two times, either of which may be missing. */
+const shorter = (a: number | null, b: number | null): number | null => {
+  if (a === null) {
+    return b;
+  }
+  return b === null ? a : Math.min(a, b);
+};
 
 /** Most recently run first; ties settle by name, then id, so they hold still. */
 const byLatestRun = (a: DrillHistorySummary, b: DrillHistorySummary): number =>
@@ -48,8 +61,9 @@ export const summarizeDrillHistory = (
   const summaries = new Map<string, DrillHistorySummary>();
 
   for (const session of sessions) {
-    const { drillId, totalTime, createdAt } = session;
+    const { drillId, createdAt } = session;
     const existing = summaries.get(drillId);
+    const time = session.completed ? session.totalTime : null;
 
     summaries.set(
       drillId,
@@ -58,13 +72,13 @@ export const summarizeDrillHistory = (
             drillId,
             drillName: drillNames.get(drillId) ?? DELETED_DRILL_NAME,
             runCount: 1,
-            bestTime: totalTime,
+            bestTime: time,
             lastRunAt: createdAt,
           }
         : {
             ...existing,
             runCount: existing.runCount + 1,
-            bestTime: Math.min(existing.bestTime, totalTime),
+            bestTime: shorter(existing.bestTime, time),
             lastRunAt: isLater(createdAt, existing.lastRunAt)
               ? createdAt
               : existing.lastRunAt,
@@ -81,28 +95,32 @@ const TIME_UNITS_PER_SECOND = 1000;
 /** Places a time is shown to: the hundredth of a second. */
 const SHOWN_DECIMALS = 2;
 
-/** The header figures for one drill's runs, in seconds. */
+/** The header figures for one drill's completed runs, in seconds. */
 export type RunTotals = {
-  /** Shortest total time of any of the runs. */
+  /** Shortest total time of the completed runs. */
   bestTime: number;
-  /** Mean total time of the runs. */
+  /** Mean total time of the completed runs. */
   averageTime: number;
 };
 
 /**
- * Best and average total time of a drill's runs. `null` when there are no
- * runs, so "nothing to show" stays distinct from a time of zero.
+ * Best and average total time of a drill's completed runs; a run stopped
+ * early is left out, since its total is not the time of the drill. `null`
+ * when no run was completed, so "nothing to show" stays distinct from a
+ * time of zero.
  */
 export const summarizeRuns = (
   sessions: readonly Session[],
 ): RunTotals | null => {
-  if (sessions.length === 0) {
+  // Folded rather than spread into `Math.min`: a drill can be run any
+  // number of times, and a call takes only so many arguments.
+  const times = sessions
+    .filter(session => session.completed)
+    .map(session => session.totalTime);
+  if (times.length === 0) {
     return null;
   }
 
-  // Folded rather than spread into `Math.min`: a drill can be run any
-  // number of times, and a call takes only so many arguments.
-  const times = sessions.map(session => session.totalTime);
   return {
     bestTime: times.reduce((best, time) => Math.min(best, time)),
     averageTime: times.reduce((sum, time) => sum + time, 0) / times.length,
@@ -113,9 +131,10 @@ export const summarizeRuns = (
 export type RunSummary = {
   session: Session;
   /**
-   * This run's total time minus that of the run before it, in seconds:
-   * negative is faster, positive is slower. `null` for the first run of the
-   * drill, which has nothing to be compared with.
+   * This run's total time minus that of the completed run before it, in
+   * seconds: negative is faster, positive is slower. `null` for a run
+   * stopped early, and for the first completed run of the drill, which
+   * have nothing to be fairly compared with.
    */
   deltaToPrevious: number | null;
 };
@@ -125,28 +144,38 @@ const byNewestRun = (a: Session, b: Session): number =>
   Date.parse(b.createdAt) - Date.parse(a.createdAt) || a.id.localeCompare(b.id);
 
 /**
- * A drill's runs newest first, each with how its total time compares to
- * the run made before it. The difference is rounded to the millisecond so
+ * A drill's runs newest first, each completed one with how its total time
+ * compares to the completed run made before it; a run stopped early in
+ * between is passed over. The difference is rounded to the millisecond so
  * float error (`2.14 - 2.22`) never reaches the screen.
  */
 export const describeRuns = (sessions: readonly Session[]): RunSummary[] => {
   const newestFirst = [...sessions].sort(byNewestRun);
 
-  return newestFirst.map((session, index) => {
-    const previous = newestFirst[index + 1];
-    if (previous === undefined) {
-      return { session, deltaToPrevious: null };
+  // Walked from the oldest run, so each completed run meets the completed
+  // run before it in one pass.
+  const described: RunSummary[] = [];
+  let previous: Session | undefined;
+  for (let index = newestFirst.length - 1; index >= 0; index -= 1) {
+    const session = newestFirst[index];
+    if (!session.completed) {
+      described.push({ session, deltaToPrevious: null });
+      continue;
     }
 
-    const difference = session.totalTime - previous.totalTime;
-    return {
-      session,
-      // `+ 0` turns the -0 that rounding a hair under gives into a plain 0.
-      deltaToPrevious:
-        Math.round(difference * TIME_UNITS_PER_SECOND) / TIME_UNITS_PER_SECOND +
-        0,
-    };
-  });
+    const deltaToPrevious =
+      previous === undefined
+        ? null
+        : // `+ 0` turns the -0 that rounding a hair under gives into 0.
+          Math.round(
+            (session.totalTime - previous.totalTime) * TIME_UNITS_PER_SECOND,
+          ) /
+            TIME_UNITS_PER_SECOND +
+          0;
+    described.push({ session, deltaToPrevious });
+    previous = session;
+  }
+  return described.reverse();
 };
 
 /**

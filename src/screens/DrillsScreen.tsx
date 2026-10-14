@@ -24,7 +24,7 @@ import { SwipeableRow } from '@components/SwipeableRow';
 import { Typography } from '@components/Typography';
 import { useDrills, type DrillsState } from '@hooks/useDrills';
 import { useThemedStyles } from '@hooks/useTheme';
-import { formatSeconds, pluralize } from '@utils/format';
+import { describeDrill } from '@utils/drill';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -49,17 +49,6 @@ const createStyles = (theme: Theme) =>
       paddingVertical: theme.spacing.xxl,
     },
   });
-
-/**
- * The line under a drill's name: its shot count, then its total par. A
- * drill with an untimed step has no total par, so the par is left out.
- */
-const describeDrill = (drill: Drill): string => {
-  const shots = pluralize(drill.shotCount, 'shot');
-  return drill.totalPar === null
-    ? shots
-    : `${shots} · Par ${formatSeconds(drill.totalPar)}`;
-};
 
 /**
  * A swipe is out of a screen reader's reach, so deleting is also offered
