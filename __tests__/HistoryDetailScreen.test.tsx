@@ -512,7 +512,96 @@ describe('HistoryDetailScreen', () => {
         `Run on ${spokenDateTime(middleAt)}, 2.9 seconds, 0.7 seconds slower than the run before`,
       );
       expect(toggleOf(tree, oldest).props.accessibilityLabel).toBe(
-        `Run on ${spokenDateTime(oldestAt)}, 2.2 seconds`,
+        `Run on ${spokenDateTime(oldestAt)}, 2.2 seconds, personal best`,
+      );
+    });
+  });
+
+  describe('the personal best', () => {
+    it('badges the quickest completed run, and only it', async () => {
+      const drill = await seedDrill('Bill Drill');
+      const newest = await seedSession(drill.id, 2.9, '2026-10-10T12:00:00Z');
+      const fastest = await seedSession(drill.id, 2.2, '2026-10-05T12:00:00Z');
+      const oldest = await seedSession(drill.id, 3.1, '2026-10-01T12:00:00Z');
+
+      const { tree } = await renderScreen(drill);
+
+      expect(textsOf(tree, `chip-pb-${fastest.id}`)).toEqual(['PB']);
+      expect(has(tree, `chip-pb-${newest.id}`)).toBe(false);
+      expect(has(tree, `chip-pb-${oldest.id}`)).toBe(false);
+    });
+
+    it('does not badge a run stopped early, however quick', async () => {
+      const drill = await seedDrill('Bill Drill');
+      const stopped = await seedSession(
+        drill.id,
+        0.5,
+        '2026-10-10T12:00:00Z',
+        splitsFor(0.5),
+        false,
+      );
+      const completed = await seedSession(
+        drill.id,
+        2.9,
+        '2026-10-05T12:00:00Z',
+      );
+
+      const { tree } = await renderScreen(drill);
+
+      expect(has(tree, `chip-pb-${stopped.id}`)).toBe(false);
+      expect(has(tree, `chip-pb-${completed.id}`)).toBe(true);
+    });
+
+    it('badges no run when every run was stopped early', async () => {
+      const drill = await seedDrill('Bill Drill');
+      const stopped = await seedSession(
+        drill.id,
+        0.5,
+        '2026-10-10T12:00:00Z',
+        splitsFor(0.5),
+        false,
+      );
+
+      const { tree } = await renderScreen(drill);
+
+      expect(has(tree, `chip-pb-${stopped.id}`)).toBe(false);
+    });
+
+    it('keeps the badge on the run that set the time when a later run matches it', async () => {
+      const drill = await seedDrill('Bill Drill');
+      const matching = await seedSession(drill.id, 2.4, '2026-10-10T12:00:00Z');
+      const first = await seedSession(drill.id, 2.4, '2026-10-01T12:00:00Z');
+
+      const { tree } = await renderScreen(drill);
+
+      expect(has(tree, `chip-pb-${first.id}`)).toBe(true);
+      expect(has(tree, `chip-pb-${matching.id}`)).toBe(false);
+    });
+
+    it('moves the badge to a new quickest run when the screen comes back', async () => {
+      const drill = await seedDrill('Bill Drill');
+      const old = await seedSession(drill.id, 2.9, '2026-10-01T12:00:00Z');
+      const { tree, goTo } = await renderScreen(drill);
+      expect(has(tree, `chip-pb-${old.id}`)).toBe(true);
+
+      await goTo('Elsewhere');
+      const quicker = await seedSession(drill.id, 2.1, '2026-10-10T12:00:00Z');
+      await goTo('HistoryDetail');
+
+      expect(has(tree, `chip-pb-${quicker.id}`)).toBe(true);
+      expect(has(tree, `chip-pb-${old.id}`)).toBe(false);
+    });
+
+    it('says the personal best in the words read for the card', async () => {
+      const drill = await seedDrill('Bill Drill');
+      const at = '2026-10-10T12:00:00.000Z';
+      const newest = await seedSession(drill.id, 2.4, at);
+      await seedSession(drill.id, 2.9, '2026-10-01T12:00:00Z');
+
+      const { tree } = await renderScreen(drill);
+
+      expect(toggleOf(tree, newest).props.accessibilityLabel).toBe(
+        `Run on ${spokenDateTime(at)}, 2.4 seconds, personal best, 0.5 seconds faster than the run before`,
       );
     });
   });

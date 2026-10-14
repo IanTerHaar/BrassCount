@@ -137,11 +137,41 @@ export type RunSummary = {
    * have nothing to be fairly compared with.
    */
   deltaToPrevious: number | null;
+  /** Whether this run is the drill's personal best (`findPersonalBest`). */
+  personalBest: boolean;
 };
 
 /** Newest first; runs saved at the same moment settle by id, so they hold still. */
 const byNewestRun = (a: Session, b: Session): number =>
   Date.parse(b.createdAt) - Date.parse(a.createdAt) || a.id.localeCompare(b.id);
+
+/** A total time in whole milliseconds, the precision a run is timed to. */
+const inTimeUnits = (seconds: number): number =>
+  Math.round(seconds * TIME_UNITS_PER_SECOND);
+
+/**
+ * The id of a drill's personal best: the completed run with the shortest
+ * total time, or `null` when no run was completed. A run stopped early is
+ * passed over, since its total is not the time of the drill. Times are
+ * compared to the millisecond, and a later run that only matches the best
+ * leaves it with the run that set it.
+ */
+export const findPersonalBest = (
+  sessions: readonly Session[],
+): string | null => {
+  let best: Session | null = null;
+  // Oldest first, so on a tie the run that set the time keeps it.
+  for (const session of [...sessions].sort(byNewestRun).reverse()) {
+    if (
+      session.completed &&
+      (best === null ||
+        inTimeUnits(session.totalTime) < inTimeUnits(best.totalTime))
+    ) {
+      best = session;
+    }
+  }
+  return best?.id ?? null;
+};
 
 /**
  * A drill's runs newest first, each completed one with how its total time
@@ -151,6 +181,7 @@ const byNewestRun = (a: Session, b: Session): number =>
  */
 export const describeRuns = (sessions: readonly Session[]): RunSummary[] => {
   const newestFirst = [...sessions].sort(byNewestRun);
+  const personalBestId = findPersonalBest(sessions);
 
   // Walked from the oldest run, so each completed run meets the completed
   // run before it in one pass.
@@ -159,7 +190,7 @@ export const describeRuns = (sessions: readonly Session[]): RunSummary[] => {
   for (let index = newestFirst.length - 1; index >= 0; index -= 1) {
     const session = newestFirst[index];
     if (!session.completed) {
-      described.push({ session, deltaToPrevious: null });
+      described.push({ session, deltaToPrevious: null, personalBest: false });
       continue;
     }
 
@@ -172,7 +203,11 @@ export const describeRuns = (sessions: readonly Session[]): RunSummary[] => {
           ) /
             TIME_UNITS_PER_SECOND +
           0;
-    described.push({ session, deltaToPrevious });
+    described.push({
+      session,
+      deltaToPrevious,
+      personalBest: session.id === personalBestId,
+    });
     previous = session;
   }
   return described.reverse();

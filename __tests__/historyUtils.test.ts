@@ -3,6 +3,7 @@ import type { Session } from '../src/types/session';
 import {
   DELETED_DRILL_NAME,
   describeRuns,
+  findPersonalBest,
   shownDeltaSign,
   summarizeDrillHistory,
   summarizeRuns,
@@ -361,6 +362,112 @@ describe('describeRuns', () => {
 
     expect(() => describeRuns(sessions)).not.toThrow();
     expect(sessions[0].totalTime).toBe(3.1);
+  });
+
+  it('marks the personal best, and only it', () => {
+    const slower = session('a', 2.9, '2026-10-01T10:00:00.000Z');
+    const fastest = session('a', 2.4, '2026-10-02T10:00:00.000Z');
+    const stopped = session('a', 0.5, '2026-10-03T10:00:00.000Z', false);
+
+    const runs = describeRuns([slower, fastest, stopped]);
+
+    expect(runs.map(run => [run.session.id, run.personalBest])).toEqual([
+      [stopped.id, false],
+      [fastest.id, true],
+      [slower.id, false],
+    ]);
+  });
+
+  it('marks no run when every run was stopped early', () => {
+    const runs = describeRuns([
+      session('a', 0.5, '2026-10-01T10:00:00.000Z', false),
+    ]);
+
+    expect(runs.map(run => run.personalBest)).toEqual([false]);
+  });
+});
+
+describe('findPersonalBest', () => {
+  it('has no personal best when there are no runs', () => {
+    expect(findPersonalBest([])).toBeNull();
+  });
+
+  it('picks the completed run with the shortest total time', () => {
+    const fastest = session('a', 2.4, '2026-10-02T10:00:00.000Z');
+
+    const best = findPersonalBest([
+      session('a', 2.9, '2026-10-01T10:00:00.000Z'),
+      fastest,
+      session('a', 3.1, '2026-10-03T10:00:00.000Z'),
+    ]);
+
+    expect(best).toBe(fastest.id);
+  });
+
+  it('makes a lone completed run the personal best', () => {
+    const only = session('a', 3.1, '2026-10-03T10:00:00.000Z');
+
+    expect(findPersonalBest([only])).toBe(only.id);
+  });
+
+  it('passes over a run stopped early, however quick', () => {
+    const completed = session('a', 2.9, '2026-10-01T10:00:00.000Z');
+
+    const best = findPersonalBest([
+      completed,
+      session('a', 0.5, '2026-10-02T10:00:00.000Z', false),
+    ]);
+
+    expect(best).toBe(completed.id);
+  });
+
+  it('has no personal best when every run was stopped early', () => {
+    expect(
+      findPersonalBest([
+        session('a', 0.5, '2026-10-01T10:00:00.000Z', false),
+        session('a', 0.8, '2026-10-02T10:00:00.000Z', false),
+      ]),
+    ).toBeNull();
+  });
+
+  it('leaves the personal best with the run that set it when a later run only matches it', () => {
+    const first = session('a', 2.4, '2026-10-01T10:00:00.000Z');
+    const matching = session('a', 2.4, '2026-10-02T10:00:00.000Z');
+
+    expect(findPersonalBest([matching, first])).toBe(first.id);
+    expect(findPersonalBest([first, matching])).toBe(first.id);
+  });
+
+  it('takes a time a thousandth quicker as a new personal best', () => {
+    const first = session('a', 2.401, '2026-10-01T10:00:00.000Z');
+    const quicker = session('a', 2.4, '2026-10-02T10:00:00.000Z');
+
+    expect(findPersonalBest([first, quicker])).toBe(quicker.id);
+  });
+
+  it('does not take float noise under a millisecond as a quicker time', () => {
+    const first = session('a', 0.1 + 0.2, '2026-10-01T10:00:00.000Z');
+    // 0.1 + 0.2 is 0.30000000000000004: the same time, not a slower one.
+    const later = session('a', 0.3, '2026-10-02T10:00:00.000Z');
+
+    expect(findPersonalBest([later, first])).toBe(first.id);
+  });
+
+  it('settles a tie between runs saved at the same moment the same way every time', () => {
+    const at = '2026-10-01T10:00:00.000Z';
+    const one = session('a', 2.4, at);
+    const two = session('a', 2.4, at);
+
+    expect(findPersonalBest([one, two])).toBe(findPersonalBest([two, one]));
+  });
+
+  it('does not change the list it is given', () => {
+    const sessions = Object.freeze([
+      Object.freeze(session('a', 3.1, '2026-10-01T10:00:00.000Z')),
+      Object.freeze(session('a', 2.4, '2026-10-02T10:00:00.000Z')),
+    ]);
+
+    expect(() => findPersonalBest(sessions)).not.toThrow();
   });
 });
 
