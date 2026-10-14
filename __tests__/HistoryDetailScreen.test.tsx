@@ -531,6 +531,19 @@ describe('HistoryDetailScreen', () => {
       expect(has(tree, `chip-pb-${oldest.id}`)).toBe(false);
     });
 
+    it('judges each drill by its own runs, not by a quicker run of another drill', async () => {
+      const first = await seedDrill('Bill Drill');
+      const second = await seedDrill('Mozambique');
+      const firstRun = await seedSession(first.id, 6, '2026-10-05T12:00:00Z');
+      const secondRun = await seedSession(second.id, 5, '2026-10-10T12:00:00Z');
+
+      const firstScreen = await renderScreen(first);
+      const secondScreen = await renderScreen(second);
+
+      expect(has(firstScreen.tree, `chip-pb-${firstRun.id}`)).toBe(true);
+      expect(has(secondScreen.tree, `chip-pb-${secondRun.id}`)).toBe(true);
+    });
+
     it('does not badge a run stopped early, however quick', async () => {
       const drill = await seedDrill('Bill Drill');
       const stopped = await seedSession(
