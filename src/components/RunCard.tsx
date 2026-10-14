@@ -30,6 +30,9 @@ const NO_VALUE = '—';
 /** What a run stopped before its last step is marked with. */
 const STOPPED_EARLY = 'Stopped early';
 
+/** What the drill's quickest completed run is marked with. */
+const PERSONAL_BEST = 'PB';
+
 /**
  * Sizes in dp at the default font size; each is multiplied by the system
  * font scale. A figure column of the split table is `FIGURE_COLUMN_WIDTH`
@@ -75,7 +78,11 @@ const speak = (seconds: number): string =>
   spokenSeconds(Number(Math.abs(seconds).toFixed(2)));
 
 /** The card's header as a screen reader should say it. */
-const speakRun = ({ session, deltaToPrevious }: RunSummary): string => {
+const speakRun = ({
+  session,
+  deltaToPrevious,
+  personalBest,
+}: RunSummary): string => {
   const said = [
     `Run on ${spokenDateTime(session.createdAt)}`,
     speak(session.totalTime),
@@ -83,6 +90,10 @@ const speakRun = ({ session, deltaToPrevious }: RunSummary): string => {
 
   if (!session.completed) {
     said.push(STOPPED_EARLY.toLowerCase());
+  }
+  // Said in full: TalkBack reads "PB" as letters.
+  if (personalBest) {
+    said.push('personal best');
   }
   if (deltaToPrevious !== null) {
     const sign = shownDeltaSign(deltaToPrevious);
@@ -342,7 +353,7 @@ const RunCardBase = ({ run, expanded, onToggle }: RunCardProps) => {
   const styles = useThemedStyles(createStyles);
   const { fontScale } = useWindowDimensions();
   const headerStacked = fontScale > STACK_HEADER_ABOVE_FONT_SCALE;
-  const { session, deltaToPrevious } = run;
+  const { session, deltaToPrevious, personalBest } = run;
 
   return (
     <Card flush testID={`card-run-${session.id}`}>
@@ -378,6 +389,13 @@ const RunCardBase = ({ run, expanded, onToggle }: RunCardProps) => {
                 testID={`chip-incomplete-${session.id}`}
               />
             )}
+            {personalBest ? (
+              <Chip
+                label={PERSONAL_BEST}
+                tone="success"
+                testID={`chip-pb-${session.id}`}
+              />
+            ) : null}
             {deltaToPrevious !== null ? (
               <Chip
                 label={`${formatSignedSeconds(deltaToPrevious)} vs previous`}
@@ -410,8 +428,9 @@ const RunCardBase = ({ run, expanded, onToggle }: RunCardProps) => {
 
 /**
  * One run of a drill: when it was made, its total time and how that
- * compares to the completed run before it, or that it was stopped early. Pressing the header shows or hides the
- * time of every step.
+ * compares to the completed run before it, or that it was stopped early,
+ * and a "PB" badge on the drill's personal best. Pressing the header shows
+ * or hides the time of every step.
  *
  * Memoised because the screen lists every run of the drill and pressing
  * one card must not redraw the others.
