@@ -83,7 +83,7 @@ You DO NOT refactor or rewrite code — you report findings only. Report only is
 - **`console.log`** left in committed code (not caught by lint in this repo).
 - **Magic numbers** for delays, thresholds and limits instead of named constants.
 - **Function over 50 lines**, nesting deeper than 4 levels, or a file past 800 lines without a stated reason.
-- **Domain types defined in `src/constants/previewData.ts`** by new code — they belong in `src/types/`.
+- **Domain types defined outside `src/types/`** by new code (e.g. in `src/constants/`) — they belong in `src/types/`.
 - **Deep optional chaining with no fallback** where the value is required.
 
 ## Diagnostic Commands

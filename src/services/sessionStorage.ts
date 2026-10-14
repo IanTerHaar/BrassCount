@@ -1,12 +1,12 @@
-import { MAX_DRILL_STEPS, MAX_STEP_PAR_SECONDS } from '@/types/drill';
+import { MAX_DRILL_STEPS } from '@/types/drill';
 import {
   MAX_SESSION_SECONDS,
   MAX_SPLIT_LABEL_LENGTH,
+  MAX_SPLIT_PAR_SECONDS,
   type Session,
   type SessionInput,
   type SessionSplit,
 } from '@/types/session';
-import { isStepPar } from '@utils/drill';
 import { isNonEmptyString, isRecord, isTimestamp } from '@utils/guards';
 import { generateId as defaultGenerateId } from '@utils/id';
 import { splitDelta } from '@utils/session';
@@ -17,8 +17,8 @@ import { createStorageNamespace, StorageError } from './storage';
 /**
  * SessionStorageService
  * ---------------------
- * Local persistence layer for sessions: the completed runs of a drill that
- * History is built from. It is the one place that knows how a run is
+ * Local persistence layer for sessions: the saved runs of a drill that
+ * History is built from, complete or stopped early. It is the one place that knows how a run is
  * stored, and the one place a split's `delta` is worked out.
  *
  * Design notes:
@@ -29,6 +29,8 @@ import { createStorageNamespace, StorageError } from './storage';
  *     When the `Session` shape changes, bump `SESSION_SCHEMA_VERSION` and
  *     upgrade older envelopes in `parseStoredSession` — existing history
  *     is migrated in place rather than abandoned under an old key.
+ *   - Schema 2 added `completed`. A schema 1 envelope is read as a
+ *     completed run: a run stopped early could not be saved before it.
  *   - The key version is still `v1` although this replaced an earlier
  *     placeholder `Session` shape: nothing ever saved that shape outside
  *     tests, and a bare value without the envelope is skipped on read.
@@ -41,8 +43,8 @@ import { createStorageNamespace, StorageError } from './storage';
  *     actual, and an entry that does not pass is skipped like corrupt JSON
  *     instead of failing the whole read.
  *   - A session is bounded (`MAX_DRILL_STEPS` splits,
- *     `MAX_SESSION_SECONDS`, `MAX_SPLIT_LABEL_LENGTH`) on save and on read
- *     alike.
+ *     `MAX_SESSION_SECONDS`, `MAX_SPLIT_LABEL_LENGTH`,
+ *     `MAX_SPLIT_PAR_SECONDS`) on save and on read alike.
  *   - Every failure surfaces as `SessionStorageError`, which is also a
  *     `StorageError`, so UI code can catch either.
  */
@@ -50,7 +52,9 @@ import { createStorageNamespace, StorageError } from './storage';
 export const SESSION_NAMESPACE = 'sessions';
 export const SESSION_STORAGE_VERSION = 'v1';
 /** Version of the `Session` shape written inside each stored envelope. */
-export const SESSION_SCHEMA_VERSION = 1;
+export const SESSION_SCHEMA_VERSION = 2;
+/** The schema before `completed`, when every run saved was complete. */
+const SESSION_SCHEMA_V1 = 1;
 
 /**
  * Why a session operation failed: the caller passed something unusable,
@@ -102,6 +106,17 @@ const isDuration = (value: unknown): value is number =>
   value >= 0 &&
   value <= MAX_SESSION_SECONDS;
 
+/**
+ * A par a split can have been judged against: more than 0 and at most
+ * `MAX_SPLIT_PAR_SECONDS`. Wider than a drill step's par, because the par
+ * of a step that cannot be heard is counted into the next one.
+ */
+const isSplitPar = (value: unknown): value is number =>
+  typeof value === 'number' &&
+  Number.isFinite(value) &&
+  value > 0 &&
+  value <= MAX_SPLIT_PAR_SECONDS;
+
 const assertId = (id: string, action: string): void => {
   if (!isNonEmptyString(id)) {
     throw invalid(`Cannot ${action} session without a valid id`);
@@ -137,9 +152,9 @@ const normalizeSplit = (split: unknown, index: number): SessionSplit => {
     throw invalid(`${position} has no valid step id`);
   }
   const label = normalizeLabel(split.label, position);
-  if (par !== undefined && !isStepPar(par)) {
+  if (par !== undefined && !isSplitPar(par)) {
     throw invalid(
-      `${position} par must be more than 0 and at most ${MAX_STEP_PAR_SECONDS} seconds`,
+      `${position} par must be more than 0 and at most ${MAX_SPLIT_PAR_SECONDS} seconds`,
     );
   }
   if (!isDuration(actual)) {
@@ -174,6 +189,7 @@ const normalizeSplits = (splits: unknown): SessionSplit[] => {
 interface UncheckedSessionFields {
   drillId: unknown;
   totalTime: unknown;
+  completed: unknown;
   splits: unknown;
 }
 
@@ -185,7 +201,7 @@ interface UncheckedSessionFields {
 const buildSession = (
   id: string,
   createdAt: string,
-  { drillId, totalTime, splits }: UncheckedSessionFields,
+  { drillId, totalTime, completed, splits }: UncheckedSessionFields,
 ): Session => {
   if (!isNonEmptyString(drillId)) {
     throw invalid('A session needs the id of the drill it was run against');
@@ -195,7 +211,17 @@ const buildSession = (
       `A session total time must be between 0 and ${MAX_SESSION_SECONDS} seconds`,
     );
   }
-  return { id, drillId, createdAt, totalTime, splits: normalizeSplits(splits) };
+  if (typeof completed !== 'boolean') {
+    throw invalid('A session needs to say whether the run was completed');
+  }
+  return {
+    id,
+    drillId,
+    createdAt,
+    totalTime,
+    completed,
+    splits: normalizeSplits(splits),
+  };
 };
 
 /**
@@ -207,20 +233,31 @@ const parseStoredSession = (stored: unknown): Session | null => {
   if (!isRecord(stored) || !isRecord(stored.session)) {
     return null;
   }
-  // Only one schema exists so far. When version 2 lands, upgrade older
-  // envelopes here before the checks below. A version newer than this
-  // build understands is left alone on disk rather than guessed at.
-  if (stored.schemaVersion !== SESSION_SCHEMA_VERSION) {
+  const { schemaVersion, session } = stored;
+  // A version newer than this build understands is left alone on disk
+  // rather than guessed at.
+  if (
+    schemaVersion !== SESSION_SCHEMA_VERSION &&
+    schemaVersion !== SESSION_SCHEMA_V1
+  ) {
     return null;
   }
 
-  const { id, drillId, createdAt, totalTime, splits } = stored.session;
+  const { id, drillId, createdAt, totalTime, splits } = session;
   if (!isNonEmptyString(id) || !isTimestamp(createdAt)) {
     return null;
   }
+  // Schema 1 had no `completed`: only a finished run could be saved then.
+  const completed =
+    schemaVersion === SESSION_SCHEMA_V1 ? true : session.completed;
 
   try {
-    return buildSession(id, createdAt, { drillId, totalTime, splits });
+    return buildSession(id, createdAt, {
+      drillId,
+      totalTime,
+      completed,
+      splits,
+    });
   } catch (err) {
     // A stored session that fails validation is skipped, the same way the
     // storage layer skips corrupt JSON, so one bad entry cannot block
@@ -252,7 +289,7 @@ const byNewest = (a: Session, b: Session): number =>
   Date.parse(b.createdAt) - Date.parse(a.createdAt) || a.id.localeCompare(b.id);
 
 /**
- * Save a completed run.
+ * Save a run, complete or stopped early.
  *
  * The service generates the session id, stamps `createdAt` and derives
  * each split's `delta` (`actual - par`, or `null` for an untimed step).
@@ -262,9 +299,10 @@ const byNewest = (a: Session, b: Session): number =>
  * Returns the stored `Session` so callers can update local state without
  * a follow-up read. Rejects with `INVALID_INPUT` when `drillId` is empty,
  * `totalTime` or a split's `actual` is outside 0 to `MAX_SESSION_SECONDS`,
- * there are no splits or more than `MAX_DRILL_STEPS`, two splits share a
- * `stepId`, a label is blank or longer than `MAX_SPLIT_LABEL_LENGTH`, or
- * a par is outside 0 (exclusive) to `MAX_STEP_PAR_SECONDS`.
+ * `completed` is not a boolean, there are no splits or more than
+ * `MAX_DRILL_STEPS`, two splits share a `stepId`, a label is blank or
+ * longer than `MAX_SPLIT_LABEL_LENGTH`, or a par is outside 0 (exclusive)
+ * to `MAX_SPLIT_PAR_SECONDS`.
  */
 export async function saveSession(
   input: SessionInput,

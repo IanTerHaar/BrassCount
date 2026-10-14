@@ -61,6 +61,7 @@ const seedSession = () =>
   saveSession({
     drillId: 'drill-1',
     totalTime: 1.7,
+    completed: true,
     splits: [
       { stepId: 'step-1', label: 'Draw', par: 1.5, actual: 1.4 },
       { stepId: 'step-2', label: 'Shot 1', par: 0.25, actual: 0.3 },

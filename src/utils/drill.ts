@@ -1,8 +1,10 @@
 import {
   MAX_STEP_PAR_SECONDS,
+  type Drill,
   type DrillStep,
   type DrillStepType,
 } from '@/types/drill';
+import { formatSeconds, pluralize } from '@utils/format';
 
 /**
  * Totals derived from a drill's steps. Pure functions, no side effects —
@@ -103,4 +105,18 @@ export const stepLabel = (
 
   const ordinal = countOfType(steps.slice(0, position + 1), step.type);
   return `${label} ${ordinal}`;
+};
+
+/**
+ * A drill in one line, under its name: its shot count, then its total par
+ * (`3 shots · Par 2.50s`). A drill with an untimed step has no total par,
+ * so the par is left out.
+ */
+export const describeDrill = (
+  drill: Pick<Drill, 'shotCount' | 'totalPar'>,
+): string => {
+  const shots = pluralize(drill.shotCount, 'shot');
+  return drill.totalPar === null
+    ? shots
+    : `${shots} · Par ${formatSeconds(drill.totalPar)}`;
 };

@@ -50,7 +50,7 @@ const styles = useThemedStyles(createStyles);
 
 ## Imports & Project Layout
 
-- Use the path aliases, importing the concrete file: `@components/Card`, `@hooks/useTheme`, `@utils/format`, `@services/sessionStorage`, `@constants/previewData`. Reach theme, types and the screens barrel through `@/` (`@/theme/theme`, `@/types/navigation`, `@/screens`).
+- Use the path aliases, importing the concrete file: `@components/Card`, `@hooks/useTheme`, `@utils/format`, `@services/sessionStorage`. Reach theme, types and the screens barrel through `@/` (`@/theme/theme`, `@/types/navigation`, `@/screens`).
 - Import order is lint-enforced: `react`, then `react-native`, then other packages, then aliases, then relative — a blank line between groups, alphabetised within each.
 - Keep files focused (200-400 lines typical, 800 max).
 

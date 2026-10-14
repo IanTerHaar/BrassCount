@@ -71,7 +71,8 @@ export const Button = ({
       accessibilityState={{ disabled }}
       style={style ? [containerStyle, style] : containerStyle}
     >
-      <Typography variant="bodyStrong" color={colors.text}>
+      {/* Centred, so a label that wraps stays in the middle of the button. */}
+      <Typography variant="bodyStrong" color={colors.text} align="center">
         {label}
       </Typography>
     </TouchableOpacity>

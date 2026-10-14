@@ -27,6 +27,9 @@ import { Typography } from './Typography';
 /** Stands in for a figure a step does not have: an untimed step's par. */
 const NO_VALUE = '—';
 
+/** What a run stopped before its last step is marked with. */
+const STOPPED_EARLY = 'Stopped early';
+
 /**
  * Sizes in dp at the default font size; each is multiplied by the system
  * font scale. A figure column of the split table is `FIGURE_COLUMN_WIDTH`
@@ -78,6 +81,9 @@ const speakRun = ({ session, deltaToPrevious }: RunSummary): string => {
     speak(session.totalTime),
   ];
 
+  if (!session.completed) {
+    said.push(STOPPED_EARLY.toLowerCase());
+  }
   if (deltaToPrevious !== null) {
     const sign = shownDeltaSign(deltaToPrevious);
     said.push(
@@ -365,6 +371,13 @@ const RunCardBase = ({ run, expanded, onToggle }: RunCardProps) => {
             <Typography variant="bodyStrong">
               {formatDateTime(session.createdAt)}
             </Typography>
+            {/* A run stopped early is not compared, so it has one or the other. */}
+            {session.completed ? null : (
+              <Chip
+                label={STOPPED_EARLY}
+                testID={`chip-incomplete-${session.id}`}
+              />
+            )}
             {deltaToPrevious !== null ? (
               <Chip
                 label={`${formatSignedSeconds(deltaToPrevious)} vs previous`}
@@ -397,7 +410,7 @@ const RunCardBase = ({ run, expanded, onToggle }: RunCardProps) => {
 
 /**
  * One run of a drill: when it was made, its total time and how that
- * compares to the run before it. Pressing the header shows or hides the
+ * compares to the completed run before it, or that it was stopped early. Pressing the header shows or hides the
  * time of every step.
  *
  * Memoised because the screen lists every run of the drill and pressing

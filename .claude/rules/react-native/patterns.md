@@ -38,13 +38,12 @@ export const HistoryDetailScreen = () => {
 
 There is no state library and no backend. Keep each concern in its own place:
 
-| Concern            | Where it lives                                                |
-| ------------------ | ------------------------------------------------------------- |
-| UI / screen state  | Local `useState` / `useRef` in the screen                     |
-| Navigation state   | React Navigation params (not a store)                         |
-| Persisted data     | A service in `src/services/` built on a storage namespace     |
-| Design tokens      | `useTheme()` / `useThemedStyles()`                            |
-| Temporary fixtures | `src/constants/previewData.ts` (to be replaced, then deleted) |
+| Concern           | Where it lives                                            |
+| ----------------- | --------------------------------------------------------- |
+| UI / screen state | Local `useState` / `useRef` in the screen                 |
+| Navigation state  | React Navigation params (not a store)                     |
+| Persisted data    | A service in `src/services/` built on a storage namespace |
+| Design tokens     | `useTheme()` / `useThemedStyles()`                        |
 
 - Derive values during render instead of storing redundant computed state.
 - Prefer local state until two screens genuinely need to share it; raise it with the user before introducing a store or context.
