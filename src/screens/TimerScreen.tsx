@@ -9,19 +9,26 @@ import {
 
 import {
   AccessibilityInfo,
+  Linking,
   StyleSheet,
   TouchableOpacity,
   View,
 } from 'react-native';
 
-import { useIsFocused, useNavigation } from '@react-navigation/native';
+import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
+import {
+  useIsFocused,
+  useNavigation,
+  type CompositeNavigationProp,
+} from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import type { SemanticColors, Theme } from '@/theme/theme';
 import type { Drill, DrillStep } from '@/types/drill';
-import type { RootStackParamList } from '@/types/navigation';
+import type { MainTabParamList, RootStackParamList } from '@/types/navigation';
 import type { RunResult, RunStep, StepResult } from '@/types/run';
 import type { SessionInput } from '@/types/session';
+import { Button } from '@components/Button';
 import { Card } from '@components/Card';
 import { DrillPicker } from '@components/DrillPicker';
 import { Icon } from '@components/Icon';
@@ -56,7 +63,11 @@ import { planRun } from '@utils/runDetection';
 const CLOCK_TICK_MS = 50;
 const NO_VALUE = '—';
 
-type Nav = NativeStackNavigationProp<RootStackParamList>;
+/** The Timer tab, which also pushes the editor over the tabs. */
+type Nav = CompositeNavigationProp<
+  BottomTabNavigationProp<MainTabParamList, 'Timer'>,
+  NativeStackNavigationProp<RootStackParamList>
+>;
 
 /** What the picker offers until the drills have been read. */
 const NO_DRILLS: Drill[] = [];
@@ -94,6 +105,12 @@ const failureMessage = (failure: DrillRunFailure): string => {
     case 'audio-unavailable':
       return 'Audio unavailable';
   }
+};
+
+const openAppSettings = (): void => {
+  // Nothing more to offer if the settings screen will not open: the
+  // header already says where the permission lives.
+  Linking.openSettings().catch(() => {});
 };
 
 const phaseMessage = (phase: DrillRunPhase, result: RunResult | null) => {
@@ -257,15 +274,57 @@ const createStyles = (theme: Theme) =>
       borderRadius: theme.radius.sm,
       backgroundColor: theme.colors.textOnPrimary,
     },
+    cancelGlyph: {
+      // On an inner view: a touchable that is rotated stops taking presses.
+      transform: [{ rotate: '45deg' }],
+    },
     resetButton: {
       paddingVertical: theme.spacing.sm,
       paddingHorizontal: theme.spacing.md,
       marginTop: theme.spacing.xs,
     },
+    locked: {
+      opacity: 0.5,
+    },
     timingNote: {
       paddingHorizontal: theme.spacing.xs,
     },
   });
+
+type FailureActionProps = {
+  failure: DrillRunFailure | null;
+  onCalibrate: () => void;
+};
+
+/**
+ * The way out of a failure the header names, when there is one the
+ * shooter can take from here: the app's settings for a microphone that has
+ * been turned off, the Calibration tab for a sound that has no threshold.
+ */
+const FailureAction = ({ failure, onCalibrate }: FailureActionProps) => {
+  switch (failure?.kind) {
+    case 'permission-blocked':
+      return (
+        <Button
+          label="Open settings"
+          variant="secondary"
+          onPress={openAppSettings}
+          testID="btn-open-settings"
+        />
+      );
+    case 'not-calibrated':
+      return (
+        <Button
+          label="Go to Calibration"
+          variant="secondary"
+          onPress={onCalibrate}
+          testID="btn-go-calibration"
+        />
+      );
+    default:
+      return null;
+  }
+};
 
 type RunOutcomeProps = {
   /** A run has finished and its times are on show. */
@@ -510,6 +569,11 @@ export const TimerScreen = () => {
     [navigation],
   );
 
+  const goToCalibration = useCallback(
+    () => navigation.navigate('Calibration'),
+    [navigation],
+  );
+
   // The prompt's buttons go once it is answered, and a screen reader's
   // focus with them: it is put on the Start button, where the next run
   // begins, rather than back at the top of the screen.
@@ -545,6 +609,10 @@ export const TimerScreen = () => {
   const drillPar = totalPar(plan);
   const onButtonColor = pending ? 'textOnWarning' : 'textOnPrimary';
   const noDrill = drillsState.status === 'ready' && drill === null;
+  // Reset sits under the Stop button: while a run is on it would throw
+  // the run away at a stray touch, and Stop already ends it. Nor while a
+  // run is being saved, which it would replace.
+  const resetLocked = running || pending || saving;
 
   return (
     <Screen
@@ -556,6 +624,8 @@ export const TimerScreen = () => {
       scrollable
       testID="screen-timer"
     >
+      <FailureAction failure={failure} onCalibrate={goToCalibration} />
+
       <View>
         <SectionHeader title="Drill" />
         <DrillPicker
@@ -618,23 +688,25 @@ export const TimerScreen = () => {
               testID="btn-start"
             >
               {pending ? (
-                <Icon name="timer" size={34} color={onButtonColor} />
+                <View style={styles.cancelGlyph}>
+                  <Icon name="plus" size={34} color={onButtonColor} />
+                </View>
               ) : running ? (
                 <View style={styles.stopGlyph} />
               ) : (
                 <Icon name="play" size={34} color="textOnPrimary" />
               )}
               <Typography variant="overline" color={onButtonColor}>
-                {pending ? 'WAIT' : running ? 'STOP' : 'START'}
+                {pending ? 'CANCEL' : running ? 'STOP' : 'START'}
               </Typography>
             </TouchableOpacity>
 
             <TouchableOpacity
               onPress={reset}
-              disabled={saving}
+              disabled={resetLocked}
               accessibilityRole="button"
-              accessibilityState={{ disabled: saving }}
-              style={styles.resetButton}
+              accessibilityState={{ disabled: resetLocked }}
+              style={[styles.resetButton, resetLocked && styles.locked]}
               testID="btn-reset"
             >
               <Typography variant="label" color="textSecondary">

@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useFocusEffect } from '@react-navigation/native';
 
-import type { CalibrationSound } from '@/types/calibration';
+import type { CalibrationSound, CalibrationState } from '@/types/calibration';
 import type { DrillStep } from '@/types/drill';
 import type { RunResult, StepResult } from '@/types/run';
 import { useCalibration } from '@hooks/useCalibration';
@@ -50,6 +50,10 @@ export type UseDrillRunResult = {
   results: readonly StepResult[];
   /** The run as it ended. `null` until it has. */
   result: RunResult | null;
+  /**
+   * Why the last run did not start, or stopped. A refusal for want of
+   * calibration names only the sounds that are still uncalibrated.
+   */
   failure: DrillRunFailure | null;
   /** Seconds since the run's zero point; 0 until that is settled. */
   readElapsed: () => number;
@@ -100,6 +104,29 @@ const failureFor = (err: unknown): DrillRunFailure => {
     case 'INVALID_STATE':
       return { kind: 'microphone' };
   }
+};
+
+/**
+ * A refusal to start for want of calibration, as it stands now: a sound
+ * calibrated since (on the Calibration tab) is no longer named, and once
+ * none is left there is nothing to say.
+ */
+const outstanding = (
+  failure: DrillRunFailure | null,
+  calibration: CalibrationState,
+): DrillRunFailure | null => {
+  if (failure?.kind !== 'not-calibrated') {
+    return failure;
+  }
+  const sounds = failure.sounds.filter(
+    sound => calibration[sound].status === 'uncalibrated',
+  );
+  if (sounds.length === 0) {
+    return null;
+  }
+  return sounds.length === failure.sounds.length
+    ? failure
+    : { kind: 'not-calibrated', sounds };
 };
 
 /**
@@ -369,5 +396,19 @@ export const useDrillRun = (): UseDrillRunResult => {
   // Returning `stop` as the cleanup runs it on blur and on unmount.
   useFocusEffect(useCallback(() => stop, [stop]));
 
-  return { phase, results, result, failure, readElapsed, start, stop, reset };
+  const shownFailure = useMemo(
+    () => outstanding(failure, calibration),
+    [calibration, failure],
+  );
+
+  return {
+    phase,
+    results,
+    result,
+    failure: shownFailure,
+    readElapsed,
+    start,
+    stop,
+    reset,
+  };
 };

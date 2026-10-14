@@ -1,6 +1,7 @@
 import {
   AccessibilityInfo,
   DeviceEventEmitter,
+  Linking,
   PermissionsAndroid,
   Platform,
 } from 'react-native';
@@ -68,6 +69,8 @@ const mockedNativeAudioCapture = jest.mocked(NativeAudioCapture);
 type TestTabParamList = {
   Timer: undefined;
   Elsewhere: undefined;
+  /** Stands in for the tab a refusal to start sends the shooter to. */
+  Calibration: undefined;
   /** Stands in for the editor the empty library sends the shooter to. */
   SequenceEditor: { id?: string };
 };
@@ -196,6 +199,7 @@ const renderScreen = async ({
             <Tab.Navigator screenOptions={{ headerShown: false }}>
               <Tab.Screen name="Timer" component={TimerScreen} />
               <Tab.Screen name="Elsewhere" component={Blank} />
+              <Tab.Screen name="Calibration" component={Blank} />
               <Tab.Screen name="SequenceEditor" component={Blank} />
             </Tab.Navigator>
           </NavigationContainer>
@@ -520,6 +524,14 @@ describe('TimerScreen', () => {
       expect(elapsedText(tree)).toBe(formatElapsed(0));
     });
 
+    it('reads Cancel during the wait, since pressing it cancels the start', async () => {
+      const { tree } = await renderScreen();
+
+      await press(tree, 'btn-start');
+
+      expect(textsOf(tree, 'btn-start')).toEqual(['CANCEL']);
+    });
+
     it('names the sounds that still need calibrating and opens nothing', async () => {
       const { tree } = await renderScreen({ calibrate: false });
 
@@ -541,6 +553,33 @@ describe('TimerScreen', () => {
       await press(tree, 'btn-start');
 
       expect(subtitle(tree)).toBe('Calibrate Shot and Rack first');
+    });
+
+    it('sends the shooter to Calibration from a refusal to start', async () => {
+      const { tree, navigationRef } = await renderScreen({ calibrate: false });
+      expect(has(tree, 'btn-go-calibration')).toBe(false);
+      await press(tree, 'btn-start');
+
+      await act(async () => {
+        first(tree, 'btn-go-calibration').props.onPress();
+        await jest.advanceTimersByTimeAsync(0);
+      });
+
+      expect(navigationRef.getCurrentRoute()?.name).toBe('Calibration');
+    });
+
+    it('stops asking for calibration once the sounds it named are calibrated', async () => {
+      const { tree, setThreshold, goTo } = await renderScreen({
+        calibrate: false,
+      });
+      await press(tree, 'btn-start');
+      await goTo('Elsewhere');
+
+      setThreshold('shot', -10);
+      await goTo('Timer');
+
+      expect(subtitle(tree)).toBe('Ready when you are');
+      expect(has(tree, 'btn-go-calibration')).toBe(false);
     });
 
     it('starts once the missing sound has been calibrated', async () => {
@@ -588,6 +627,32 @@ describe('TimerScreen', () => {
         expect(startMock).not.toHaveBeenCalled();
       },
     );
+
+    it('offers the settings when the microphone is turned off', async () => {
+      const openSettings = jest
+        .spyOn(Linking, 'openSettings')
+        .mockResolvedValue(undefined);
+      checkPermission.mockResolvedValue(false);
+      requestPermission.mockResolvedValue(
+        PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN,
+      );
+      const { tree } = await renderScreen();
+      await press(tree, 'btn-start');
+
+      await press(tree, 'btn-open-settings');
+
+      expect(openSettings).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not offer the settings when the microphone can still be asked for', async () => {
+      checkPermission.mockResolvedValue(false);
+      requestPermission.mockResolvedValue(PermissionsAndroid.RESULTS.DENIED);
+      const { tree } = await renderScreen();
+
+      await press(tree, 'btn-start');
+
+      expect(has(tree, 'btn-open-settings')).toBe(false);
+    });
 
     it('says so when the microphone cannot be opened', async () => {
       mockedNativeAudioCapture.start.mockRejectedValue(
@@ -943,6 +1008,7 @@ describe('TimerScreen', () => {
       const { tree } = await renderScreen();
       await startRun(tree);
       shoot(ZERO + 1400);
+      await press(tree, 'btn-start');
 
       await press(tree, 'btn-reset');
 
@@ -1012,16 +1078,26 @@ describe('TimerScreen', () => {
       expect(startMock).toHaveBeenCalledTimes(1);
     });
 
-    it('hears nothing after a Reset in the middle of a run', async () => {
+    it('keeps Reset off while a run is on, so a stray touch cannot throw it away', async () => {
+      const resetOff = (tree: ReactTestRenderer): boolean => {
+        const reset = first(tree, 'btn-reset');
+        return (
+          reset.props.disabled === true &&
+          reset.props.accessibilityState?.disabled === true
+        );
+      };
       const { tree } = await renderScreen();
-      await startRun(tree);
-      await press(tree, 'btn-reset');
+      expect(resetOff(tree)).toBe(false);
 
-      shoot(ZERO + 1400);
-      await settle();
+      await press(tree, 'btn-start');
+      expect(resetOff(tree)).toBe(true);
 
-      expect(subtitle(tree)).toBe('Ready when you are');
-      expect(split(tree, 1).value).toBe('—');
+      hear(REQUESTED_AT - 40, ROOM_DB);
+      await beep();
+      expect(resetOff(tree)).toBe(true);
+
+      await press(tree, 'btn-start');
+      expect(resetOff(tree)).toBe(false);
     });
 
     it('ends the run with what was heard when the app is left', async () => {
