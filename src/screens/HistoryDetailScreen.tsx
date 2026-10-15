@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 
 import {
   FlatList,
@@ -13,12 +13,14 @@ import {
   useRoute,
   type RouteProp,
 } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import type { Theme } from '@/theme/theme';
 import type { HistoryStackParamList } from '@/types/navigation';
 import { Card } from '@components/Card';
 import { EmptyState } from '@components/EmptyState';
 import { RunCard } from '@components/RunCard';
+import { RunPickerSheet } from '@components/RunPickerSheet';
 import { Screen } from '@components/Screen';
 import { SectionHeader } from '@components/SectionHeader';
 import { Typography } from '@components/Typography';
@@ -28,6 +30,10 @@ import { formatSeconds, pluralize, spokenSeconds } from '@utils/format';
 import type { RunSummary, RunTotals } from '@utils/history';
 
 type HistoryDetailRoute = RouteProp<HistoryStackParamList, 'HistoryDetail'>;
+type HistoryDetailNavigation = NativeStackNavigationProp<
+  HistoryStackParamList,
+  'HistoryDetail'
+>;
 
 /** Stands in for a time until the runs have been read, or when there are none. */
 const NO_TIME = '—';
@@ -235,7 +241,8 @@ const keyOfRun = (run: RunSummary): string => run.session.id;
  * Every run of one drill, read from `SessionStorageService`: the best and
  * average total time, then a card per run, newest first, with when it was
  * made, its total time and how that compares to the run before it. A card
- * opens to the Step / Par / Actual / Δ breakdown of the run.
+ * opens to the Step / Par / Actual / Δ breakdown of the run, and from there
+ * the run can be compared with another run of the drill, picked in a sheet.
  *
  * The title bar stays put and the list scrolls under it: a drill can be
  * run any number of times, so the cards are virtualised rather than mapped
@@ -243,7 +250,7 @@ const keyOfRun = (run: RunSummary): string => run.session.id;
  */
 export const HistoryDetailScreen = () => {
   const styles = useThemedStyles(createStyles);
-  const navigation = useNavigation();
+  const navigation = useNavigation<HistoryDetailNavigation>();
   const route = useRoute<HistoryDetailRoute>();
   const { drillId, drillName } = route.params;
   const { state, reload } = useDrillRuns(drillId);
@@ -253,9 +260,46 @@ export const HistoryDetailScreen = () => {
   // The newest run starts open, so the run just made is in full view;
   // every other card starts closed.
   const newestId = runs[0]?.session.id;
+  const canCompare = runs.length > 1;
 
   // Only the cards the shooter has pressed, by session id: `true` is open.
   const [toggled, setToggled] = useState<Record<string, boolean>>({});
+  // The run whose Compare was pressed last. It is kept after the picker
+  // closes, so the list does not change under the sheet as it slides away.
+  const [compareFrom, setCompareFrom] = useState<string | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  // Claimed by the first run picked, so a double tap opens one comparison.
+  const pickedRef = useRef(false);
+  // Every other run of the drill can be picked; the sheet is only up while
+  // the run it compares from is still listed.
+  const compareCandidates = useMemo(
+    () => runs.filter(run => run.session.id !== compareFrom),
+    [runs, compareFrom],
+  );
+  const picking = pickerOpen && compareCandidates.length < runs.length;
+
+  const openPicker = useCallback((sessionId: string) => {
+    pickedRef.current = false;
+    setCompareFrom(sessionId);
+    setPickerOpen(true);
+  }, []);
+
+  const closePicker = useCallback(() => setPickerOpen(false), []);
+
+  const compareWith = useCallback(
+    (otherId: string) => {
+      if (pickedRef.current || compareFrom === null) {
+        return;
+      }
+      pickedRef.current = true;
+      setPickerOpen(false);
+      navigation.navigate('RunComparison', {
+        drillId,
+        runIds: [compareFrom, otherId],
+      });
+    },
+    [compareFrom, drillId, navigation],
+  );
 
   const toggle = useCallback(
     (sessionId: string) =>
@@ -272,9 +316,11 @@ export const HistoryDetailScreen = () => {
         run={item}
         expanded={toggled[item.session.id] ?? item.session.id === newestId}
         onToggle={toggle}
+        // A run can only be compared with another run of the drill.
+        onCompare={canCompare ? openPicker : undefined}
       />
     ),
-    [toggled, newestId, toggle],
+    [toggled, newestId, toggle, canCompare, openPicker],
   );
 
   return (
@@ -304,6 +350,13 @@ export const HistoryDetailScreen = () => {
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
         testID="list-history-detail-runs"
+      />
+
+      <RunPickerSheet
+        visible={picking}
+        runs={compareCandidates}
+        onSelect={compareWith}
+        onClose={closePicker}
       />
     </Screen>
   );

@@ -23,6 +23,8 @@ export type HistoryStackParamList = {
   HistoryList: undefined;
   /** Runs recorded for a single drill. */
   HistoryDetail: { drillId: string; drillName: string };
+  /** Two runs of one drill, side by side, in either order. */
+  RunComparison: { drillId: string; runIds: [string, string] };
 };
 
 declare global {

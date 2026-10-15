@@ -1,6 +1,7 @@
 import type { Drill } from '../src/types/drill';
 import type { Session } from '../src/types/session';
 import {
+  compareRuns,
   DELETED_DRILL_NAME,
   describeRuns,
   findPersonalBest,
@@ -491,5 +492,168 @@ describe('shownDeltaSign', () => {
     expect(shownDeltaSign(0.01)).toBe(1);
     expect(shownDeltaSign(-0.01)).toBe(-1);
     expect(shownDeltaSign(0.006)).toBe(1);
+  });
+});
+
+describe('compareRuns', () => {
+  const split = (
+    stepId: string,
+    label: string,
+    actual: number,
+  ): Session['splits'][number] => ({ stepId, label, actual, delta: null });
+
+  const run = (
+    id: string,
+    createdAt: string,
+    splits: Session['splits'],
+    completed = true,
+  ): Session => ({
+    id,
+    drillId: 'a',
+    createdAt,
+    totalTime: splits.reduce((sum, { actual }) => sum + actual, 0),
+    completed,
+    splits,
+  });
+
+  const older = run('older', '2026-10-01T10:00:00.000Z', [
+    split('s1', 'Draw', 1.5),
+    split('s2', 'Shot 1', 0.3),
+    split('s3', 'Shot 2', 0.25),
+  ]);
+  const newer = run('newer', '2026-10-02T10:00:00.000Z', [
+    split('s1', 'Draw', 1.4),
+    split('s2', 'Shot 1', 0.32),
+    split('s3', 'Shot 2', 0.25),
+  ]);
+
+  it('puts the earlier run first whichever order the runs are given in', () => {
+    expect(compareRuns(newer, older)).toEqual(compareRuns(older, newer));
+    expect(compareRuns(newer, older).earlier.id).toBe('older');
+    expect(compareRuns(newer, older).later.id).toBe('newer');
+  });
+
+  it('settles runs saved at the same moment by id', () => {
+    const a = { ...older, id: 'a' };
+    const b = { ...newer, id: 'b', createdAt: older.createdAt };
+
+    // The same order the run list uses: of two runs at one moment, the
+    // one with the lower id is listed first, as the newer.
+    expect(compareRuns(a, b).later.id).toBe('a');
+    expect(compareRuns(b, a).later.id).toBe('a');
+  });
+
+  it('compares every step the two runs share, later minus earlier', () => {
+    expect(compareRuns(older, newer).steps).toEqual([
+      { stepId: 's1', label: 'Draw', earlier: 1.5, later: 1.4, delta: -0.1 },
+      { stepId: 's2', label: 'Shot 1', earlier: 0.3, later: 0.32, delta: 0.02 },
+      { stepId: 's3', label: 'Shot 2', earlier: 0.25, later: 0.25, delta: 0 },
+    ]);
+  });
+
+  it('compares the total times of two completed runs', () => {
+    // 1.97 - 2.05, rounded to the millisecond rather than left as float error.
+    expect(compareRuns(older, newer).totalDelta).toBe(-0.08);
+  });
+
+  it('does not compare the total time when either run was stopped early', () => {
+    const stopped = run(
+      'stopped',
+      '2026-10-03T10:00:00.000Z',
+      [split('s1', 'Draw', 1.2)],
+      false,
+    );
+
+    expect(compareRuns(older, stopped).totalDelta).toBeNull();
+    expect(compareRuns(stopped, older).totalDelta).toBeNull();
+  });
+
+  it('keeps the steps a run stopped early never reached, uncompared', () => {
+    const stopped = run(
+      'stopped',
+      '2026-10-03T10:00:00.000Z',
+      [split('s1', 'Draw', 1.2)],
+      false,
+    );
+
+    expect(compareRuns(older, stopped).steps).toEqual([
+      { stepId: 's1', label: 'Draw', earlier: 1.5, later: 1.2, delta: -0.3 },
+      { stepId: 's2', label: 'Shot 1', earlier: 0.3, later: null, delta: null },
+      {
+        stepId: 's3',
+        label: 'Shot 2',
+        earlier: 0.25,
+        later: null,
+        delta: null,
+      },
+    ]);
+  });
+
+  it('places a step only the earlier run has after the step it followed', () => {
+    // The drill lost its middle step between the two runs.
+    const edited = run('edited', '2026-10-03T10:00:00.000Z', [
+      split('s1', 'Draw', 1.4),
+      split('s3', 'Shot 1', 0.26),
+    ]);
+
+    expect(compareRuns(older, edited).steps.map(step => step.stepId)).toEqual([
+      's1',
+      's2',
+      's3',
+    ]);
+  });
+
+  it('follows the later run when the steps were reordered, under its labels', () => {
+    const reordered = run('reordered', '2026-10-03T10:00:00.000Z', [
+      split('s1', 'Draw', 1.4),
+      split('s3', 'Shot 1', 0.26),
+      split('s2', 'Shot 2', 0.31),
+    ]);
+
+    expect(compareRuns(older, reordered).steps).toEqual([
+      { stepId: 's1', label: 'Draw', earlier: 1.5, later: 1.4, delta: -0.1 },
+      {
+        stepId: 's3',
+        label: 'Shot 1',
+        earlier: 0.25,
+        later: 0.26,
+        delta: 0.01,
+      },
+      {
+        stepId: 's2',
+        label: 'Shot 2',
+        earlier: 0.3,
+        later: 0.31,
+        delta: 0.01,
+      },
+    ]);
+  });
+
+  it('lists a step only the later run has where the later run has it', () => {
+    const added = run('added', '2026-10-03T10:00:00.000Z', [
+      split('s0', 'Draw', 1.4),
+      split('s1', 'Shot 1', 0.5),
+    ]);
+
+    expect(compareRuns(older, added).steps).toEqual([
+      { stepId: 's0', label: 'Draw', earlier: null, later: 1.4, delta: null },
+      { stepId: 's1', label: 'Shot 1', earlier: 1.5, later: 0.5, delta: -1 },
+      { stepId: 's2', label: 'Shot 1', earlier: 0.3, later: null, delta: null },
+      {
+        stepId: 's3',
+        label: 'Shot 2',
+        earlier: 0.25,
+        later: null,
+        delta: null,
+      },
+    ]);
+  });
+
+  it('leaves the runs it is given untouched', () => {
+    const before = JSON.stringify([older, newer]);
+
+    compareRuns(older, newer);
+
+    expect(JSON.stringify([older, newer])).toBe(before);
   });
 });

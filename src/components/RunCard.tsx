@@ -19,6 +19,7 @@ import {
 } from '@utils/format';
 import { shownDeltaSign, type RunSummary } from '@utils/history';
 
+import { Button } from './Button';
 import { Card } from './Card';
 import { Chip } from './Chip';
 import { Icon } from './Icon';
@@ -178,6 +179,11 @@ const createStyles = (theme: Theme) =>
     },
     figure: { alignItems: 'flex-end' },
     figureCaption: { textAlign: 'right' },
+    compare: {
+      paddingHorizontal: theme.spacing.md,
+      paddingBottom: theme.spacing.md,
+    },
+    compareButton: { minHeight: 48 },
   });
 
 type Layout = {
@@ -347,9 +353,15 @@ type RunCardProps = {
   expanded: boolean;
   /** Show or hide the breakdown of the run with this session id. */
   onToggle: (sessionId: string) => void;
+  /**
+   * Start comparing the run with this session id with another run of the
+   * drill. Left out when the drill has no other run, and then the card
+   * offers no Compare action.
+   */
+  onCompare?: (sessionId: string) => void;
 };
 
-const RunCardBase = ({ run, expanded, onToggle }: RunCardProps) => {
+const RunCardBase = ({ run, expanded, onToggle, onCompare }: RunCardProps) => {
   const styles = useThemedStyles(createStyles);
   const { fontScale } = useWindowDimensions();
   const headerStacked = fontScale > STACK_HEADER_ABOVE_FONT_SCALE;
@@ -422,6 +434,20 @@ const RunCardBase = ({ run, expanded, onToggle }: RunCardProps) => {
       {expanded ? (
         <SplitTable sessionId={session.id} splits={session.splits} />
       ) : null}
+
+      {/* Under the splits, which is what a comparison sets side by side. */}
+      {expanded && onCompare !== undefined ? (
+        <View style={styles.compare}>
+          <Button
+            label="Compare with another run"
+            variant="secondary"
+            onPress={() => onCompare(session.id)}
+            accessibilityLabel={`Compare the run on ${spokenDateTime(session.createdAt)} with another run`}
+            style={styles.compareButton}
+            testID={`btn-compare-${session.id}`}
+          />
+        </View>
+      ) : null}
     </Card>
   );
 };
@@ -430,7 +456,8 @@ const RunCardBase = ({ run, expanded, onToggle }: RunCardProps) => {
  * One run of a drill: when it was made, its total time and how that
  * compares to the completed run before it, or that it was stopped early,
  * and a "PB" badge on the drill's personal best. Pressing the header shows
- * or hides the time of every step.
+ * or hides the time of every step, and, when the drill has another run,
+ * offers to compare the two.
  *
  * Memoised because the screen lists every run of the drill and pressing
  * one card must not redraw the others.

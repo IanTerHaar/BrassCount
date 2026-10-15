@@ -40,6 +40,7 @@ import { formatDateTime, spokenDateTime } from '../src/utils/format';
 type TestTabParamList = {
   HistoryDetail: { drillId: string; drillName: string };
   Elsewhere: undefined;
+  RunComparison: { drillId: string; runIds: [string, string] };
 };
 
 const metrics = {
@@ -51,6 +52,19 @@ const Tab = createBottomTabNavigator<TestTabParamList>();
 
 /** Stands in for the other tabs. */
 const Blank = () => null;
+
+/** The params the comparison screen was opened with, in order. */
+const comparisonsOpened: TestTabParamList['RunComparison'][] = [];
+
+/** Stands in for the comparison screen, and notes what it was opened with. */
+const ComparisonProbe = ({
+  route,
+}: {
+  route: { params: TestTabParamList['RunComparison'] };
+}) => {
+  comparisonsOpened.push(route.params);
+  return null;
+};
 
 const seedDrill = (name: string): Promise<Drill> =>
   saveDrill({
@@ -112,6 +126,7 @@ const mountScreen = (drillId: string, drillName: string): Harness => {
               initialParams={{ drillId, drillName }}
             />
             <Tab.Screen name="Elsewhere" component={Blank} />
+            <Tab.Screen name="RunComparison" component={ComparisonProbe} />
           </Tab.Navigator>
         </NavigationContainer>
       </SafeAreaProvider>,
@@ -253,6 +268,7 @@ describe('HistoryDetailScreen', () => {
 
   beforeEach(async () => {
     await AsyncStorage.clear();
+    comparisonsOpened.splice(0);
   });
 
   afterEach(() => {
@@ -739,6 +755,166 @@ describe('HistoryDetailScreen', () => {
         'Draw, par 1.5 seconds, took 1.32 seconds, 0.18 seconds under par',
         'Holster, no par, took 1.5 seconds',
       ]);
+    });
+  });
+
+  describe('comparing two runs', () => {
+    const press = async (tree: ReactTestRenderer, testID: string) => {
+      const [node] = byTestId(tree, testID);
+      if (node === undefined) {
+        throw new Error(`nothing is rendered for "${testID}"`);
+      }
+      await act(async () => {
+        node.props.onPress();
+      });
+    };
+
+    /** Session ids the sheet offers, top to bottom. */
+    const offered = (tree: ReactTestRenderer): string[] => {
+      const ids = tree.root
+        .findAll(
+          node =>
+            typeof node.props.testID === 'string' &&
+            node.props.testID.startsWith('opt-compare-'),
+        )
+        .map(node =>
+          (node.props.testID as string).slice('opt-compare-'.length),
+        );
+      return [...new Set(ids)];
+    };
+
+    it('offers to compare an open run when the drill has another run', async () => {
+      const drill = await seedDrill('Bill Drill');
+      const newest = await seedSession(drill.id, 3, '2026-10-10T12:00:00Z');
+      const older = await seedSession(drill.id, 3.2, '2026-10-05T12:00:00Z');
+
+      const { tree } = await renderScreen(drill);
+
+      expect(has(tree, `btn-compare-${newest.id}`)).toBe(true);
+      // Only an open card shows the action, under its splits.
+      expect(has(tree, `btn-compare-${older.id}`)).toBe(false);
+
+      await pressToggle(tree, older);
+
+      expect(has(tree, `btn-compare-${older.id}`)).toBe(true);
+    });
+
+    it('does not offer to compare the only run of a drill', async () => {
+      const drill = await seedDrill('Bill Drill');
+      const only = await seedSession(drill.id, 3, '2026-10-10T12:00:00Z');
+
+      const { tree } = await renderScreen(drill);
+
+      expect(isOpen(tree, only)).toBe(true);
+      expect(has(tree, `btn-compare-${only.id}`)).toBe(false);
+    });
+
+    it('names the run in the words read for the Compare button', async () => {
+      const drill = await seedDrill('Bill Drill');
+      const newest = await seedSession(drill.id, 3, '2026-10-10T12:00:00Z');
+      await seedSession(drill.id, 3.2, '2026-10-05T12:00:00Z');
+
+      const { tree } = await renderScreen(drill);
+
+      const [button] = byTestId(tree, `btn-compare-${newest.id}`);
+      expect(button.props.accessibilityLabel).toBe(
+        `Compare the run on ${spokenDateTime(newest.createdAt)} with another run`,
+      );
+    });
+
+    it('offers every other run of the drill, newest first', async () => {
+      const drill = await seedDrill('Bill Drill');
+      const other = await seedDrill('Other Drill');
+      const newest = await seedSession(drill.id, 3, '2026-10-10T12:00:00Z');
+      const middle = await seedSession(drill.id, 3.1, '2026-10-07T12:00:00Z');
+      const oldest = await seedSession(drill.id, 3.2, '2026-10-05T12:00:00Z');
+      await seedSession(other.id, 2, '2026-10-09T12:00:00Z');
+      const { tree } = await renderScreen(drill);
+      expect(has(tree, 'sheet-compare')).toBe(false);
+
+      await press(tree, `btn-compare-${newest.id}`);
+
+      expect(has(tree, 'sheet-compare')).toBe(true);
+      expect(offered(tree)).toEqual([middle.id, oldest.id]);
+    });
+
+    it('opens the comparison of the two runs when one is picked', async () => {
+      const drill = await seedDrill('Bill Drill');
+      const newest = await seedSession(drill.id, 3, '2026-10-10T12:00:00Z');
+      const older = await seedSession(drill.id, 3.2, '2026-10-05T12:00:00Z');
+      const { tree } = await renderScreen(drill);
+
+      await press(tree, `btn-compare-${newest.id}`);
+      await press(tree, `opt-compare-${older.id}`);
+      await settle();
+
+      expect(comparisonsOpened.at(-1)).toEqual({
+        drillId: drill.id,
+        runIds: [newest.id, older.id],
+      });
+      expect(has(tree, 'sheet-compare')).toBe(false);
+    });
+
+    it('opens one comparison, of the run picked first, on a double tap', async () => {
+      const drill = await seedDrill('Bill Drill');
+      const newest = await seedSession(drill.id, 3, '2026-10-10T12:00:00Z');
+      const middle = await seedSession(drill.id, 3.1, '2026-10-07T12:00:00Z');
+      const oldest = await seedSession(drill.id, 3.2, '2026-10-05T12:00:00Z');
+      const { tree } = await renderScreen(drill);
+      await press(tree, `btn-compare-${newest.id}`);
+
+      // Both taps land before the screen redraws.
+      const [first] = byTestId(tree, `opt-compare-${middle.id}`);
+      const [second] = byTestId(tree, `opt-compare-${oldest.id}`);
+      await act(async () => {
+        first.props.onPress();
+        second.props.onPress();
+      });
+      await settle();
+
+      expect(comparisonsOpened.at(-1)).toEqual({
+        drillId: drill.id,
+        runIds: [newest.id, middle.id],
+      });
+    });
+
+    it('opens nothing when the picker is closed without picking', async () => {
+      const drill = await seedDrill('Bill Drill');
+      const newest = await seedSession(drill.id, 3, '2026-10-10T12:00:00Z');
+      await seedSession(drill.id, 3.2, '2026-10-05T12:00:00Z');
+      const { tree } = await renderScreen(drill);
+
+      await press(tree, `btn-compare-${newest.id}`);
+      await press(tree, 'btn-compare-close');
+      await settle();
+
+      expect(has(tree, 'sheet-compare')).toBe(false);
+      expect(comparisonsOpened).toEqual([]);
+    });
+
+    it('marks the runs it offers that were stopped early or are the best', async () => {
+      const drill = await seedDrill('Bill Drill');
+      const newest = await seedSession(drill.id, 3, '2026-10-10T12:00:00Z');
+      const stopped = await seedSession(
+        drill.id,
+        0.5,
+        '2026-10-07T12:00:00Z',
+        splitsFor(0.5),
+        false,
+      );
+      const best = await seedSession(drill.id, 2.5, '2026-10-05T12:00:00Z');
+      const { tree } = await renderScreen(drill);
+
+      await press(tree, `btn-compare-${newest.id}`);
+
+      expect(textsOf(tree, `opt-compare-${stopped.id}`)).toContain(
+        'STOPPED EARLY',
+      );
+      expect(textsOf(tree, `opt-compare-${best.id}`)).toContain('PB');
+      const [option] = byTestId(tree, `opt-compare-${best.id}`);
+      expect(option.props.accessibilityLabel).toBe(
+        `Run on ${spokenDateTime(best.createdAt)}, 2.5 seconds, personal best`,
+      );
     });
   });
 
