@@ -150,6 +150,16 @@ const inTimeUnits = (seconds: number): number =>
   Math.round(seconds * TIME_UNITS_PER_SECOND);
 
 /**
+ * `later - earlier` in seconds, rounded to the millisecond so float error
+ * (`2.14 - 2.22`) never reaches the screen.
+ */
+const difference = (later: number, earlier: number): number =>
+  // `+ 0` turns the -0 that rounding a hair under gives into 0.
+  Math.round((later - earlier) * TIME_UNITS_PER_SECOND) /
+    TIME_UNITS_PER_SECOND +
+  0;
+
+/**
  * The id of a drill's personal best: the completed run with the shortest
  * total time, or `null` when no run was completed. A run stopped early is
  * passed over, since its total is not the time of the drill. Times are
@@ -176,8 +186,7 @@ export const findPersonalBest = (
 /**
  * A drill's runs newest first, each completed one with how its total time
  * compares to the completed run made before it; a run stopped early in
- * between is passed over. The difference is rounded to the millisecond so
- * float error (`2.14 - 2.22`) never reaches the screen.
+ * between is passed over. The difference is rounded to the millisecond.
  */
 export const describeRuns = (sessions: readonly Session[]): RunSummary[] => {
   const newestFirst = [...sessions].sort(byNewestRun);
@@ -197,12 +206,7 @@ export const describeRuns = (sessions: readonly Session[]): RunSummary[] => {
     const deltaToPrevious =
       previous === undefined
         ? null
-        : // `+ 0` turns the -0 that rounding a hair under gives into 0.
-          Math.round(
-            (session.totalTime - previous.totalTime) * TIME_UNITS_PER_SECOND,
-          ) /
-            TIME_UNITS_PER_SECOND +
-          0;
+        : difference(session.totalTime, previous.totalTime);
     described.push({
       session,
       deltaToPrevious,
@@ -226,4 +230,96 @@ export const shownDeltaSign = (delta: number): -1 | 0 | 1 => {
     return 0;
   }
   return shown < 0 ? -1 : 1;
+};
+
+/** One step of a drill as two of its runs went. */
+export type StepComparison = {
+  stepId: string;
+  /** What the later run called the step, or the earlier one when only it heard the step. */
+  label: string;
+  /** Seconds the step took in the earlier run; `null` when it was not heard. */
+  earlier: number | null;
+  /** Seconds the step took in the later run; `null` when it was not heard. */
+  later: number | null;
+  /**
+   * `later - earlier` in seconds, rounded to the millisecond: negative is
+   * faster. `null` unless both runs heard the step.
+   */
+  delta: number | null;
+};
+
+/** Two runs of one drill, side by side. */
+export type RunComparison = {
+  /** The run made first. */
+  earlier: Session;
+  /** The run made second. */
+  later: Session;
+  /**
+   * The later run's total time minus the earlier one's, in seconds.
+   * `null` when either was stopped early: its total is not the time of the
+   * drill, so the two cannot be fairly compared.
+   */
+  totalDelta: number | null;
+  /** Every step either run heard, in the later run's order. */
+  steps: StepComparison[];
+};
+
+const stepComparison = (
+  stepId: string,
+  label: string,
+  earlier: number | null,
+  later: number | null,
+): StepComparison => ({
+  stepId,
+  label,
+  earlier,
+  later,
+  delta: earlier === null || later === null ? null : difference(later, earlier),
+});
+
+/**
+ * Two runs of the same drill step by step, the earlier one first whichever
+ * order they are passed in. Steps are matched by id, which a drill keeps
+ * through edits, so a renamed or moved step is still compared with itself.
+ *
+ * The rows follow the later run. A step only the earlier run heard (one
+ * the later run stopped before, or one since removed from the drill) goes
+ * after the step it followed in the earlier run, so a run stopped early
+ * still lists the steps it never reached.
+ */
+export const compareRuns = (a: Session, b: Session): RunComparison => {
+  // The order the run list uses, so "earlier" agrees with what is shown.
+  const [later, earlier] = [a, b].sort(byNewestRun);
+
+  // Built up locally: nothing outside this function sees the list until it
+  // is returned.
+  const steps = later.splits.map(split =>
+    stepComparison(split.stepId, split.label, null, split.actual),
+  );
+  let insertAt = 0;
+  for (const split of earlier.splits) {
+    const index = steps.findIndex(step => step.stepId === split.stepId);
+    if (index === -1) {
+      steps.splice(
+        insertAt,
+        0,
+        stepComparison(split.stepId, split.label, split.actual, null),
+      );
+      insertAt += 1;
+    } else {
+      const { stepId, label, later: laterActual } = steps[index];
+      steps[index] = stepComparison(stepId, label, split.actual, laterActual);
+      insertAt = index + 1;
+    }
+  }
+
+  return {
+    earlier,
+    later,
+    totalDelta:
+      earlier.completed && later.completed
+        ? difference(later.totalTime, earlier.totalTime)
+        : null,
+    steps,
+  };
 };
