@@ -20,6 +20,7 @@ import {
   CalibrationProvider,
   type CalibrationContextValue,
 } from '../src/store/CalibrationContext';
+import type { CalibrationSound } from '../src/types/calibration';
 import type { DrillStep } from '../src/types/drill';
 
 jest.mock('../src/services/startSequence', () => {
@@ -49,6 +50,13 @@ const ZERO = REQUESTED_AT + 84;
 const TWO_SHOTS: DrillStep[] = [
   { id: 'a', type: 'shot', par: 1.5 },
   { id: 'b', type: 'shot' },
+];
+
+/** Needs a reload and a rack, which `renderHook` leaves uncalibrated. */
+const SHOT_RELOAD_RACK: DrillStep[] = [
+  { id: 'a', type: 'shot' },
+  { id: 'b', type: 'reload' },
+  { id: 'c', type: 'rack' },
 ];
 
 type PendingStart = {
@@ -92,8 +100,11 @@ const renderHook = () => {
     }
     return hook;
   };
-  const calibrate = (thresholdDbfs = -10): void => {
-    act(() => store?.setThreshold('shot', thresholdDbfs));
+  const calibrate = (
+    thresholdDbfs = -10,
+    sound: CalibrationSound = 'shot',
+  ): void => {
+    act(() => store?.setThreshold(sound, thresholdDbfs));
   };
   calibrate();
   return { tree, read, calibrate };
@@ -292,6 +303,35 @@ describe('useDrillRun', () => {
 
     expect(read().failure).toBeNull();
     await settle();
+  });
+
+  it('names only the sounds still uncalibrated once one has been calibrated since', async () => {
+    const { read, calibrate } = renderHook();
+    act(() => read().start(SHOT_RELOAD_RACK));
+    await settle();
+    expect(read().failure).toEqual({
+      kind: 'not-calibrated',
+      sounds: ['reload', 'rack'],
+    });
+
+    calibrate(-30, 'reload');
+
+    expect(read().failure).toEqual({
+      kind: 'not-calibrated',
+      sounds: ['rack'],
+    });
+  });
+
+  it('drops the refusal once every sound it named has been calibrated', async () => {
+    const { read, calibrate } = renderHook();
+    act(() => read().start(SHOT_RELOAD_RACK));
+    await settle();
+
+    calibrate(-30, 'reload');
+    calibrate(-25, 'rack');
+
+    expect(read().failure).toBeNull();
+    expect(read().phase).toBe('idle');
   });
 
   it('starts with the thresholds of the moment, not those it was mounted with', async () => {
