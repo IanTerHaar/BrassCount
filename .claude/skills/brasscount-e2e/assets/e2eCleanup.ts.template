@@ -1,0 +1,54 @@
+/**
+ * E2E TEST ONLY. Written by the brasscount-e2e skill
+ * (`patches.mjs cleanup on`) and deleted by `patches.mjs cleanup off`.
+ * Never commit this file.
+ *
+ * Runs once when the bundle loads: removes the drills the e2e run created
+ * (named with the test prefix), every session recorded with them, and any
+ * session made since the run began whose drill no longer exists (a test
+ * drill deleted through the UI). The shooter's own drills and runs, and
+ * orphaned sessions older than the run, are left alone.
+ */
+import { deleteDrillById, loadDrills } from '@services/drillStorage';
+import { deleteSessionById, loadSessions } from '@services/sessionStorage';
+
+const TEST_DRILL_PREFIX = '__PREFIX__';
+const SINCE_MS = __SINCE_MS__;
+const TAG = 'BRASSCOUNT-E2E';
+
+async function cleanUp(): Promise<void> {
+  const drills = await loadDrills();
+  const sessions = await loadSessions();
+  const testDrillIds = new Set(
+    drills
+      .filter(drill => drill.name.startsWith(TEST_DRILL_PREFIX))
+      .map(drill => drill.id),
+  );
+  const knownDrillIds = new Set(drills.map(drill => drill.id));
+  const doomed = sessions.filter(
+    session =>
+      testDrillIds.has(session.drillId) ||
+      (!knownDrillIds.has(session.drillId) &&
+        Date.parse(session.createdAt) >= SINCE_MS),
+  );
+  for (const session of doomed) {
+    await deleteSessionById(session.id);
+  }
+  for (const id of testDrillIds) {
+    await deleteDrillById(id);
+  }
+  const [drillsLeft, sessionsLeft] = await Promise.all([
+    loadDrills(),
+    loadSessions(),
+  ]);
+  console.log(
+    `${TAG} removed sessions=${doomed.length} drills=${testDrillIds.size}; ` +
+      `left drills=${drillsLeft.length} sessions=${sessionsLeft.length}`,
+  );
+}
+
+cleanUp().catch((err: unknown) => {
+  console.log(`${TAG} cleanup failed: ${String(err)}`);
+});
+
+export {};
