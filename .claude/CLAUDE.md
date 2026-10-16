@@ -132,6 +132,8 @@ Root native stack → `Tabs` (bottom tabs: Calibration, Drills, **Timer** as ini
 
 Navigator headers are off everywhere: each screen renders its own header through the `Screen` component, and the bottom chrome is the custom `TabBar`. A new tab needs an entry in `tabIcons` in `TabBar.tsx`.
 
+Every bottom sheet (`Select`, `ParPickerSheet`, `AppearanceSheet`, `ConfirmSheet`, `RunPickerSheet`) is a core `Modal`, closed by its `onRequestClose`. Android cancels a dialog itself as Escape goes down, before React Native's key-up listener can call `onRequestClose`, which left the sheet open as far as React knew and its invisible content swallowing touches (#125). `ModalDialogGuard` (`android/.../ModalDialogGuard.kt`, registered in `MainApplication`) makes each Modal's dialog non-cancelable so Escape reaches JS like Back does; keep it when touching `MainApplication`.
+
 ### Theming
 
 `src/theme/theme.ts` defines a raw palette and semantic tokens (`colors`, `spacing`, `radius`, `typography`, `elevation`) for light and dark themes with an identical shape.
