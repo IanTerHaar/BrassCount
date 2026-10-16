@@ -87,6 +87,21 @@ jobs:
       - name: Jest
         run: npm run test:ci
 
+  memory-budget:
+    name: Memory file budget
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: CLAUDE.md and rules size
+        run: npm run check:memory
+
   pr-title:
     name: Conventional PR title
     if: github.event.pull_request.draft == false

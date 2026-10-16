@@ -17,6 +17,7 @@
     "test": "jest",
     "test:ci": "jest --ci --coverage --reporters=default",
     "typecheck": "tsc --noEmit",
+    "check:memory": "node .claude/hooks/check-memory-budget.js",
     "lint": "eslint . --max-warnings=0",
     "lint:fix": "eslint . --fix",
     "lint:format": "npm run lint:fix && npm run format",
