@@ -5,11 +5,16 @@
  * Claude ends a turn, but only when the working tree has TypeScript changes —
  * a whole-project `tsc` is too slow to run after every single edit.
  *
+ * It also fails the turn when a memory file (CLAUDE.md, rules) is over its
+ * size budget; see check-memory-budget.js.
+ *
  * Exit 2 feeds the compiler errors back to Claude and keeps the turn going.
  */
 const { spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+
+const { describeOverBudget } = require('./check-memory-budget');
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const TSC = path.join(ROOT, 'node_modules', 'typescript', 'bin', 'tsc');
@@ -42,6 +47,11 @@ const main = () => {
   // Already continuing because of this hook — don't loop forever.
   if (input.stop_hook_active === true) {
     return 0;
+  }
+  const overBudget = describeOverBudget();
+  if (overBudget) {
+    process.stderr.write(`${overBudget}\n`);
+    return 2;
   }
   if (!fs.existsSync(TSC) || !hasTypeScriptChanges()) {
     return 0;

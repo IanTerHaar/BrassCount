@@ -21,6 +21,7 @@ Root config files (`babel.config.js`, `jest.config.js`, `eslint.config.js`, …)
 
 ## Stop (`.claude/hooks/stop-typecheck.js`)
 
+- **Memory budget** — runs first on every turn, not only for TypeScript changes; see [common/hooks.md](../common/hooks.md).
 - **TypeScript** — `tsc --noEmit` across the project when `.ts` / `.tsx` / `tsconfig.json` files changed in the working tree. Errors block the end of the turn.
 
 ## Not Automated

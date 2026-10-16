@@ -6,16 +6,17 @@ Two layers of automation run in this repo. Both call the same tools as the `pack
 
 Configured in `.claude/settings.json`; the scripts live in `.claude/hooks/`.
 
-| Event                       | Script              | What it runs                                                                                                  | `package.json` equivalent |
-| --------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------- |
-| PostToolUse (`Edit\|Write`) | `post-edit.js`      | `eslint --fix --max-warnings=0` then `prettier --write` on the edited file                                    | `npm run lint:format`     |
-| Stop                        | `stop-typecheck.js` | `tsc --noEmit` for the whole project, only when the working tree has `.ts` / `.tsx` / `tsconfig.json` changes | `npm run typecheck`       |
+| Event                       | Script              | What it runs                                                                                                                                              | `package.json` equivalent                   |
+| --------------------------- | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| PostToolUse (`Edit\|Write`) | `post-edit.js`      | `eslint --fix --max-warnings=0` then `prettier --write` on the edited file                                                                                | `npm run lint:format`                       |
+| Stop                        | `stop-typecheck.js` | First the memory budget check (below), then `tsc --noEmit` for the whole project, only when the working tree has `.ts` / `.tsx` / `tsconfig.json` changes | `npm run check:memory`, `npm run typecheck` |
 
 Behaviour to expect:
 
 - **The edit hook rewrites files.** After an Edit or Write, the file on disk may differ from what was written (imports reordered, formatting changed). Re-read before making a follow-up edit to a region it may have touched.
 - **File coverage matches lint-staged.** `*.{ts,tsx,js,jsx}` get ESLint + Prettier; `*.{json,md,yml,yaml}` get Prettier only. Files under `node_modules/`, `android/`, `ios/` and `coverage/` are skipped, and the root config files ESLint ignores are formatted but not linted.
 - **Failures block.** An ESLint error or warning that `--fix` cannot resolve, or a type error at the end of a turn, is fed back as a blocking error. Fix the cause — do not add `eslint-disable` or `@ts-ignore` to get past it.
+- **Memory files have a size budget.** The Stop hook runs `check-memory-budget.js` on every turn, whatever changed: `.claude/CLAUDE.md` may not exceed 8 KB and each file under `.claude/rules/` 6 KB (the caps are constants in the script). Over budget fails the turn with the file and sizes. Don't raise the cap: move feature detail into a path-scoped rule or a code header comment. CI runs the same check as `memory-budget` in `pr-check.yml`.
 - **Tests are not run by hooks.** Run `npm test -- <pattern>` yourself after changing behaviour, and `npm run test:ci` before committing.
 - **Android builds are never run by hooks.** Gradle is too slow for edit-time automation; build with `npm run android` when native code changes.
 
