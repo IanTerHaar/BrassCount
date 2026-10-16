@@ -1,5 +1,6 @@
 package com.brasscount.app
 
+import android.os.Bundle
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.fabricEnabled
@@ -19,4 +20,14 @@ class MainActivity : ReactActivity() {
    */
   override fun createReactActivityDelegate(): ReactActivityDelegate =
       DefaultReactActivityDelegate(this, mainComponentName, fabricEnabled)
+
+  /**
+   * react-native-screens cannot restore its fragments: when Android recreates the activity (font
+   * size or locale change, process restore) the saved fragment state makes it throw "Screen
+   * fragments should never be restored". Starting without the saved state lets React rebuild the
+   * screens instead.
+   */
+  override fun onCreate(savedInstanceState: Bundle?) {
+    super.onCreate(null)
+  }
 }
