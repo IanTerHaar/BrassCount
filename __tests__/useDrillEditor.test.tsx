@@ -538,6 +538,40 @@ describe('useDrillEditor saving', () => {
       expect(editor.current().saveFailure).toBeNull();
     });
 
+    it('drops the failure once the draft is edited', async () => {
+      jest
+        .spyOn(DrillStorageService, 'save')
+        .mockRejectedValueOnce(
+          new DrillStorageError('Failed to save drill', 'STORAGE_FAILURE'),
+        );
+      const editor = await renderEditor();
+      buildDraft(editor);
+      await editor.save();
+      expect(editor.current().saveFailure).toBe('failed');
+
+      act(() => {
+        editor.current().setName('Bill Drill 2');
+      });
+
+      expect(editor.current().saveFailure).toBeNull();
+    });
+
+    it('keeps the drill-is-gone failure through edits and cannot save again', async () => {
+      const drill = await saveDrill(BILL_DRILL);
+      const editor = await renderEditor(drill.id);
+      await deleteDrillById(drill.id);
+      await editor.save();
+      expect(editor.current().saveFailure).toBe('missing');
+
+      act(() => {
+        editor.current().setName('Renamed');
+      });
+
+      expect(editor.current().saveFailure).toBe('missing');
+      expect(editor.current().canSave).toBe(false);
+      expect(await editor.save()).toBeNull();
+    });
+
     it('does not report a failure once the editor is closed', async () => {
       const write = deferredWrite();
       jest

@@ -488,6 +488,17 @@ describe('SequenceEditorScreen', () => {
       );
     });
 
+    it('keeps a scrollbar on the preset list so its length shows', async () => {
+      const { tree } = await renderEditor();
+      await addSteps(tree, 1);
+
+      await press(tree, 'btn-par-step-0');
+
+      const list = first(tree, 'list-par-presets');
+      expect(list.props.showsVerticalScrollIndicator).toBe(true);
+      expect(list.props.persistentScrollbar).toBe(true);
+    });
+
     it('says the first step is timed from the timer start', async () => {
       const { tree } = await renderEditor();
       await addSteps(tree, 2);
@@ -748,6 +759,89 @@ describe('SequenceEditorScreen', () => {
       await press(tree, 'btn-remove-step-2');
 
       expect(announce.mock.calls).toEqual([['Removed step 3, Shot 2']]);
+    });
+
+    describe('where screen reader focus goes', () => {
+      // The control a ref points at, told apart by its `testID`.
+      const nodeWith = (testID: string) =>
+        expect.objectContaining({ props: expect.objectContaining({ testID }) });
+      let setFocus: jest.SpyInstance;
+      let handleOf: jest.Mock;
+      let handleSpy: jest.SpyInstance;
+
+      beforeEach(() => {
+        setFocus = jest
+          .spyOn(AccessibilityInfo, 'setAccessibilityFocus')
+          .mockImplementation(() => {});
+        // The test renderer has no native tags: hand out one per node.
+        const tags = new Map<unknown, number>();
+        handleOf = jest.fn((node: unknown) => {
+          if (node === null || node === undefined) {
+            return null;
+          }
+          if (!tags.has(node)) {
+            tags.set(node, tags.size + 1);
+          }
+          return tags.get(node) ?? null;
+        });
+        // `findNodeHandle` is an accessor on the package, so spy on the
+        // getter; the cast is only to let TypeScript see it as one.
+        const reactNative = jest.requireActual('react-native') as {
+          readonly findNodeHandle: number;
+        };
+        handleSpy = jest
+          .spyOn(reactNative, 'findNodeHandle', 'get')
+          .mockReturnValue(handleOf as never);
+      });
+
+      afterEach(() => {
+        setFocus.mockRestore();
+        handleSpy.mockRestore();
+      });
+
+      it('moves to the step that took the place of the removed one', async () => {
+        const { tree } = await renderEditor();
+        await addSteps(tree, 3);
+
+        await press(tree, 'btn-remove-step-1');
+
+        expect(setFocus).toHaveBeenCalledTimes(1);
+        const tag = setFocus.mock.calls[0][0];
+        expect(handleOf).toHaveBeenLastCalledWith(
+          nodeWith('btn-remove-step-1'),
+        );
+        expect(tag).toEqual(expect.any(Number));
+      });
+
+      it('moves to the step before it when the last one was removed', async () => {
+        const { tree } = await renderEditor();
+        await addSteps(tree, 3);
+
+        await press(tree, 'btn-remove-step-2');
+
+        expect(setFocus).toHaveBeenCalledTimes(1);
+        expect(handleOf).toHaveBeenLastCalledWith(
+          nodeWith('btn-remove-step-1'),
+        );
+      });
+
+      it('moves to Add step when no step is left', async () => {
+        const { tree } = await renderEditor();
+        await addSteps(tree, 1);
+
+        await press(tree, 'btn-remove-step-0');
+
+        expect(setFocus).toHaveBeenCalledTimes(1);
+        expect(handleOf).toHaveBeenLastCalledWith(nodeWith('btn-add-step'));
+      });
+
+      it('stays put when adding a step', async () => {
+        const { tree } = await renderEditor();
+
+        await addSteps(tree, 2);
+
+        expect(setFocus).not.toHaveBeenCalled();
+      });
     });
 
     it('shows the empty state again once the last step is gone', async () => {
@@ -1269,6 +1363,21 @@ describe('SequenceEditorScreen', () => {
     });
   });
 
+  it('goes back once however often back is pressed', async () => {
+    const { tree, currentRoute } = await renderEditor();
+    const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    await act(async () => {
+      const onBack = withProp(tree, 'btn-back', 'onPress').props.onPress;
+      onBack();
+      onBack();
+    });
+
+    expect(currentRoute()?.name).toBe('Drills');
+    expect(error).not.toHaveBeenCalled();
+    error.mockRestore();
+  });
+
   it('goes back from the header', async () => {
     const { tree, currentRoute } = await renderEditor();
 
@@ -1430,6 +1539,38 @@ describe('SequenceEditorScreen', () => {
         'This drill is no longer saved on this device, so it cannot be changed.',
       );
       expect(await loadDrills()).toEqual([]);
+    });
+
+    it('cannot be saved again once the drill is known to be gone', async () => {
+      const drill = await saveDrill(BILL_DRILL);
+      const { tree } = await renderEditor(drill.id);
+      await deleteDrillById(drill.id);
+      await type(tree, 'input-drill-name', 'Renamed');
+      await press(tree, 'btn-save-drill');
+      await settle();
+
+      await type(tree, 'input-drill-name', 'Renamed again');
+
+      expect(has(tree, 'text-drill-save-error')).toBe(true);
+      expect(isDisabled(tree, 'btn-save-drill')).toBe(true);
+    });
+
+    it('drops a failure message once the drill is edited', async () => {
+      const drill = await saveDrill(BILL_DRILL);
+      jest
+        .spyOn(DrillStorageService, 'update')
+        .mockRejectedValueOnce(
+          new DrillStorageError('Failed to update drill', 'STORAGE_FAILURE'),
+        );
+      const { tree } = await renderEditor(drill.id);
+      await press(tree, 'btn-save-drill');
+      await settle();
+      expect(has(tree, 'text-drill-save-error')).toBe(true);
+
+      await type(tree, 'input-drill-name', 'Renamed');
+
+      expect(has(tree, 'text-drill-save-error')).toBe(false);
+      expect(isDisabled(tree, 'btn-save-drill')).toBe(false);
     });
 
     it('says the changes were not saved when storage fails', async () => {

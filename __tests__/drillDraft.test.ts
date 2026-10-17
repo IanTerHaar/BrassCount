@@ -298,6 +298,16 @@ describe('parseParInput', () => {
     expect(parseParInput('0.256')).toBe(0.26);
   });
 
+  it('rounds a half hundredth up despite binary floating point', () => {
+    expect(parseParInput('1.005')).toBe(1.01);
+    expect(parseParInput('0.015')).toBe(0.02);
+    expect(parseParInput('2.675')).toBe(2.68);
+  });
+
+  it('reads a comma as the decimal separator, so "1,000" is one second', () => {
+    expect(parseParInput('1,000')).toBe(1);
+  });
+
   it.each<[string, string]>([
     ['nothing typed', ''],
     ['only spaces', '   '],

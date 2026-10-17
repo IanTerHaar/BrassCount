@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { memo, useCallback, type ElementRef } from 'react';
 
 import {
   AccessibilityInfo,
@@ -9,7 +9,7 @@ import {
 
 import type { Theme } from '@/theme/theme';
 import type { DrillStep, DrillStepType } from '@/types/drill';
-import { useThemedStyles } from '@hooks/useTheme';
+import { useTheme, useThemedStyles } from '@hooks/useTheme';
 import { stepTypeLabel } from '@utils/drill';
 import { stepTypeChoices } from '@utils/drillDraft';
 import { formatSeconds, spokenSeconds } from '@utils/format';
@@ -63,10 +63,10 @@ const createStyles = (theme: Theme) =>
       borderBottomColor: theme.colors.border,
     },
     badge: {
-      minWidth: 26,
-      minHeight: 26,
+      minWidth: theme.sizes.badge,
+      minHeight: theme.sizes.badge,
       paddingHorizontal: theme.spacing.xs,
-      borderRadius: theme.radius.sm + 2,
+      borderRadius: theme.radius.badge,
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: theme.colors.primarySoft,
@@ -99,8 +99,16 @@ const createStyles = (theme: Theme) =>
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: theme.colors.border,
     },
-    removeButton: { width: 32, height: 32, borderRadius: 16 },
-    moveButton: { width: 40, height: 40, borderRadius: 20 },
+    removeButton: {
+      width: theme.sizes.removeButton,
+      height: theme.sizes.removeButton,
+      borderRadius: theme.sizes.removeButton / 2,
+    },
+    moveButton: {
+      width: theme.sizes.moveButton,
+      height: theme.sizes.moveButton,
+      borderRadius: theme.sizes.moveButton / 2,
+    },
     moveButtonDisabled: { opacity: 0.4 },
     // Rotating a glyph turns the plus into a cross and the chevron up or
     // down. The rotation sits inside the button, not on it: Android stops
@@ -129,6 +137,7 @@ const MoveButton = ({
   onPress,
 }: MoveButtonProps) => {
   const styles = useThemedStyles(createStyles);
+  const { sizes } = useTheme();
 
   return (
     <TouchableOpacity
@@ -146,7 +155,7 @@ const MoveButton = ({
       testID={`btn-move-${direction}-step-${position}`}
     >
       <View style={direction === 'up' ? styles.upGlyph : styles.downGlyph}>
-        <Icon name="chevron" size={18} color="textSecondary" />
+        <Icon name="chevron" size={sizes.iconLg} color="textSecondary" />
       </View>
     </TouchableOpacity>
   );
@@ -173,6 +182,14 @@ type DrillStepRowProps = {
   onRemove: (id: string) => void;
   /** Move the step with this id to `toPosition`, counted from 0. */
   onMove: (id: string, toPosition: number) => void;
+  /**
+   * Hands the screen the step's remove button (and `null` when it goes),
+   * so it can put the reader's focus there once a neighbour is removed.
+   */
+  registerRemove?: (
+    id: string,
+    node: ElementRef<typeof TouchableOpacity> | null,
+  ) => void;
 };
 
 /**
@@ -193,10 +210,18 @@ export const DrillStepRow = memo(
     onEditPar,
     onRemove,
     onMove,
+    registerRemove,
   }: DrillStepRowProps) => {
     const styles = useThemedStyles(createStyles);
+    const { sizes } = useTheme();
     const number = position + 1;
     const hasPar = step.par !== undefined;
+    const stepId = step.id;
+    const removeRef = useCallback(
+      (node: ElementRef<typeof TouchableOpacity> | null) =>
+        registerRemove?.(stepId, node),
+      [registerRemove, stepId],
+    );
 
     const move = (direction: 'up' | 'down') => {
       const to = direction === 'up' ? position - 1 : position + 1;
@@ -266,7 +291,7 @@ export const DrillStepRow = memo(
             >
               <Icon
                 name="timer"
-                size={12}
+                size={sizes.iconSm}
                 color={hasPar ? 'primary' : 'textTertiary'}
               />
               <Typography
@@ -278,6 +303,7 @@ export const DrillStepRow = memo(
             </TouchableOpacity>
 
             <TouchableOpacity
+              ref={removeRef}
               onPress={() => {
                 onRemove(step.id);
                 // The row, and the reader's focus with it, is gone: say so.
@@ -292,7 +318,7 @@ export const DrillStepRow = memo(
               testID={`btn-remove-step-${position}`}
             >
               <View style={styles.removeGlyph}>
-                <Icon name="plus" size={16} color="textSecondary" />
+                <Icon name="plus" size={sizes.iconMd} color="textSecondary" />
               </View>
             </TouchableOpacity>
           </View>
