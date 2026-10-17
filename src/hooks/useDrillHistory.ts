@@ -18,6 +18,11 @@ export type DrillHistoryState =
       runCount: number;
       /** One per drill with at least one run, most recently run first. */
       summaries: DrillHistorySummary[];
+      /**
+       * The last refresh failed, so the history was read earlier. Cleared
+       * by the next read that succeeds.
+       */
+      refreshFailed: boolean;
     };
 
 export type UseDrillHistoryResult = {
@@ -36,7 +41,8 @@ export type UseDrillHistoryResult = {
  *
  * A refresh keeps the current list on screen until the new one arrives, so
  * coming back does not flash a loading state — and keeps it if the read
- * fails. Only a first load (or a `reload`) that fails shows an error.
+ * fails, flagged as `refreshFailed`. Only a first load (or a `reload`)
+ * that fails shows an error.
  */
 export const useDrillHistory = (): UseDrillHistoryResult => {
   const [state, setState] = useState<DrillHistoryState>({ status: 'loading' });
@@ -59,6 +65,7 @@ export const useDrillHistory = (): UseDrillHistoryResult => {
         status: 'ready',
         runCount: sessions.length,
         summaries: summarizeDrillHistory(sessions, drills),
+        refreshFailed: false,
       });
     } catch {
       if (loadIdRef.current !== loadId) {
@@ -67,9 +74,12 @@ export const useDrillHistory = (): UseDrillHistoryResult => {
       // With nothing on screen yet, whichever read failed, there is no
       // true picture to show, so the screen offers a retry. A refresh that
       // fails is different: the history already shown was read
-      // successfully, so it stays and the next focus reads again.
+      // successfully, so it stays, marked as possibly out of date, and the
+      // next focus reads again.
       setState(previous =>
-        previous.status === 'ready' ? previous : { status: 'error' },
+        previous.status === 'ready'
+          ? { ...previous, refreshFailed: true }
+          : { status: 'error' },
       );
     }
   }, []);

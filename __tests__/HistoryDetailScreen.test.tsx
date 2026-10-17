@@ -1,4 +1,4 @@
-import { Dimensions, StyleSheet } from 'react-native';
+import { AccessibilityInfo, Dimensions, StyleSheet } from 'react-native';
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -1014,6 +1014,35 @@ describe('HistoryDetailScreen', () => {
       expect(totals(tree)).toEqual({ best: '3.10s', avg: '3.10s' });
     });
 
+    it('says the runs may be out of date when reading again fails, until one succeeds', async () => {
+      const announce = jest
+        .spyOn(AccessibilityInfo, 'announceForAccessibility')
+        .mockImplementation(() => {});
+      const drill = await seedDrill('Bill Drill');
+      await seedSession(drill.id, 3.1, '2026-10-10T12:00:00Z');
+      const { tree, goTo } = await renderScreen(drill);
+      expect(has(tree, 'text-history-detail-refresh-failed')).toBe(false);
+      announce.mockClear();
+      await goTo('Elsewhere');
+
+      jest
+        .spyOn(SessionStorageService, 'loadByDrillId')
+        .mockRejectedValueOnce(storageFailure());
+      await goTo('HistoryDetail');
+
+      expect(screenTexts(tree)).toContain(
+        'Could not refresh. Showing what was loaded earlier.',
+      );
+      expect(announce).toHaveBeenCalledWith(
+        'Could not refresh. Showing what was loaded earlier.',
+      );
+
+      await goTo('Elsewhere');
+      await goTo('HistoryDetail');
+
+      expect(has(tree, 'text-history-detail-refresh-failed')).toBe(false);
+    });
+
     it('ignores a read that answers after the screen was left', async () => {
       const drill = await seedDrill('Bill Drill');
       const run = await seedSession(drill.id, 3.1, '2026-10-10T12:00:00Z');
@@ -1066,6 +1095,21 @@ describe('HistoryDetailScreen', () => {
       // Without the drill its runs would be shown as a deleted drill's.
       expect(has(tree, 'state-history-detail-error')).toBe(true);
       expect(cardOrder(tree)).toEqual([]);
+    });
+
+    it('announces the failure to a screen reader', async () => {
+      const announce = jest
+        .spyOn(AccessibilityInfo, 'announceForAccessibility')
+        .mockImplementation(() => {});
+      announce.mockClear();
+      const drill = await seedDrill('Bill Drill');
+      jest
+        .spyOn(SessionStorageService, 'loadByDrillId')
+        .mockRejectedValue(storageFailure());
+
+      await renderScreen(drill);
+
+      expect(announce).toHaveBeenCalledWith('Could not load the runs');
     });
 
     it('does not show the raw error', async () => {

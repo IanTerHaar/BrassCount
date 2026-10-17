@@ -1,3 +1,5 @@
+import { AccessibilityInfo } from 'react-native';
+
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import {
@@ -494,6 +496,37 @@ describe('HistoryScreen', () => {
       expect(counters(tree)).toEqual({ runs: '1', drills: '1' });
     });
 
+    it('says the list may be out of date when reading again fails, until one succeeds', async () => {
+      const announce = jest
+        .spyOn(AccessibilityInfo, 'announceForAccessibility')
+        .mockImplementation(() => {});
+      const drill = await seedDrill('Bill Drill');
+      await seedSession(drill.id, 3.1, '2026-10-11T12:00:00.000Z');
+      const { tree, goTo } = await renderScreen();
+      expect(has(tree, 'text-history-refresh-failed')).toBe(false);
+      announce.mockClear();
+      await goTo('Elsewhere');
+
+      jest
+        .spyOn(SessionStorageService, 'loadAll')
+        .mockRejectedValueOnce(
+          new SessionStorageError('Failed to load sessions', 'STORAGE_FAILURE'),
+        );
+      await goTo('HistoryList');
+
+      expect(textsOf(tree, 'text-history-refresh-failed')).toEqual([
+        'Could not refresh. Showing what was loaded earlier.',
+      ]);
+      expect(announce).toHaveBeenCalledWith(
+        'Could not refresh. Showing what was loaded earlier.',
+      );
+
+      await goTo('Elsewhere');
+      await goTo('HistoryList');
+
+      expect(has(tree, 'text-history-refresh-failed')).toBe(false);
+    });
+
     it('ignores a read that answers after the screen was left', async () => {
       const drill = await seedDrill('Bill Drill');
       await seedSession(drill.id, 3.1, '2026-10-11T12:00:00.000Z');
@@ -546,6 +579,22 @@ describe('HistoryScreen', () => {
       // Without the drills every row would be a nameless "Deleted drill".
       expect(has(tree, 'state-history-error')).toBe(true);
       expect(rowOrder(tree)).toEqual([]);
+    });
+
+    it('announces the failure to a screen reader', async () => {
+      const announce = jest
+        .spyOn(AccessibilityInfo, 'announceForAccessibility')
+        .mockImplementation(() => {});
+      announce.mockClear();
+      jest
+        .spyOn(SessionStorageService, 'loadAll')
+        .mockRejectedValue(
+          new SessionStorageError('Failed to load sessions', 'STORAGE_FAILURE'),
+        );
+
+      await renderScreen();
+
+      expect(announce).toHaveBeenCalledWith('Could not load your history');
     });
 
     it('does not show the raw error', async () => {

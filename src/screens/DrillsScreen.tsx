@@ -2,9 +2,11 @@ import { useCallback, useRef, useState } from 'react';
 
 import {
   AccessibilityInfo,
+  FlatList,
   StyleSheet,
   View,
   type AccessibilityActionEvent,
+  type ListRenderItemInfo,
 } from 'react-native';
 
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -18,18 +20,37 @@ import { ConfirmSheet } from '@components/ConfirmSheet';
 import { EmptyState } from '@components/EmptyState';
 import { Icon } from '@components/Icon';
 import { ListRow } from '@components/ListRow';
+import { RefreshFailedNotice } from '@components/RefreshFailedNotice';
 import { Screen } from '@components/Screen';
 import { SectionHeader } from '@components/SectionHeader';
 import { SwipeableRow } from '@components/SwipeableRow';
 import { Typography } from '@components/Typography';
+import { useAnnounce } from '@hooks/useAnnounce';
 import { useDrills, type DrillsState } from '@hooks/useDrills';
 import { useThemedStyles } from '@hooks/useTheme';
 import { describeDrill } from '@utils/drill';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
+const ERROR_TITLE = 'Could not load your drills';
+
 const createStyles = (theme: Theme) =>
   StyleSheet.create({
+    // The list runs to the bottom edge, under the floating tab bar.
+    screenContent: { paddingBottom: 0 },
+    // Pulled out to the screen's edges and padded back in, so the cards'
+    // shadows are not cut off at the sides of the list.
+    list: {
+      flex: 1,
+      marginHorizontal: -theme.spacing.lg,
+    },
+    listContent: {
+      paddingHorizontal: theme.spacing.lg,
+      // Clears the floating tab bar so the last card is never trapped.
+      paddingBottom: theme.spacing.xxl * 2,
+    },
+    listHeader: { gap: theme.spacing.md },
+    separator: { height: theme.spacing.md },
     createCard: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -70,7 +91,6 @@ type DrillRowHandlers = {
 
 type DrillRowProps = DrillRowHandlers & {
   drill: Drill;
-  divided: boolean;
   /** Whether the row is swiped open, showing its Delete action. */
   open: boolean;
 };
@@ -78,7 +98,6 @@ type DrillRowProps = DrillRowHandlers & {
 /** One saved drill: tap to edit, swipe left for Delete. */
 const DrillRow = ({
   drill,
-  divided,
   open,
   onEdit,
   onOpenChange,
@@ -91,60 +110,52 @@ const DrillRow = ({
   };
 
   return (
-    <SwipeableRow
-      actionLabel="Delete"
-      actionAccessibilityLabel={`Delete ${drill.name}`}
-      onAction={() => onRequestDelete(drill)}
-      open={open}
-      onOpenChange={next => onOpenChange(drill.id, next)}
-      actionTestID={`btn-delete-drill-${drill.id}`}
-      gestureTestID={`swipe-drill-${drill.id}`}
-    >
-      <ListRow
-        title={drill.name}
-        subtitle={describeDrill(drill)}
-        // A row showing its Delete action is put away by a tap, the same
-        // as swiping it back, rather than opened in the editor.
-        onPress={() =>
-          open ? onOpenChange(drill.id, false) : onEdit(drill.id)
-        }
-        divided={divided}
-        accessibilityActions={DRILL_ROW_ACTIONS}
-        onAccessibilityAction={handleAccessibilityAction}
-        testID={`row-drill-${drill.id}`}
-      />
-    </SwipeableRow>
+    <Card flush>
+      <SwipeableRow
+        actionLabel="Delete"
+        actionAccessibilityLabel={`Delete ${drill.name}`}
+        onAction={() => onRequestDelete(drill)}
+        open={open}
+        onOpenChange={next => onOpenChange(drill.id, next)}
+        actionTestID={`btn-delete-drill-${drill.id}`}
+        gestureTestID={`swipe-drill-${drill.id}`}
+      >
+        <ListRow
+          title={drill.name}
+          subtitle={describeDrill(drill)}
+          // A row showing its Delete action is put away by a tap, the same
+          // as swiping it back, rather than opened in the editor.
+          onPress={() =>
+            open ? onOpenChange(drill.id, false) : onEdit(drill.id)
+          }
+          accessibilityActions={DRILL_ROW_ACTIONS}
+          onAccessibilityAction={handleAccessibilityAction}
+          testID={`row-drill-${drill.id}`}
+        />
+      </SwipeableRow>
+    </Card>
   );
 };
 
-type SavedDrillsProps = DrillRowHandlers & {
-  state: DrillsState;
-  /** Id of the row swiped open, if any. Only one is open at a time. */
-  openRowId: string | null;
-  /** Open the editor on a new drill. */
-  onCreate: () => void;
+type DrillsStatusProps = {
+  /** Why there is no drill to list. */
+  status: 'loading' | 'error' | 'empty';
   onRetry: () => void;
 };
 
-/** What sits under the "Saved" header: the list, or why there is none. */
-const SavedDrills = ({
-  state,
-  openRowId,
-  onCreate,
-  onEdit,
-  onOpenChange,
-  onRequestDelete,
-  onRetry,
-}: SavedDrillsProps) => {
+/** What sits under the "Saved" header when there is no drill to list. */
+const DrillsStatus = ({ status, onRetry }: DrillsStatusProps) => {
   const styles = useThemedStyles(createStyles);
 
-  if (state.status === 'loading') {
+  if (status === 'loading') {
     return (
       <Card>
         <View style={styles.loading}>
           <Typography
             variant="body"
             color="textSecondary"
+            // Spoken when "Try again" swaps the error for this line.
+            accessibilityLiveRegion="polite"
             testID="text-drills-loading"
           >
             Loading your drills…
@@ -154,60 +165,42 @@ const SavedDrills = ({
     );
   }
 
-  if (state.status === 'error') {
-    return (
-      <Card>
-        {/* Announced: it takes the place of the loading line on its own. */}
-        <View accessibilityLiveRegion="polite">
-          <EmptyState
-            icon="list"
-            title="Could not load your drills"
-            message="Something went wrong reading them from this device."
-            actionLabel="Try again"
-            onActionPress={onRetry}
-            testID="state-drills-error"
-          />
-        </View>
-      </Card>
-    );
-  }
-
-  const { drills } = state;
-
-  if (drills.length === 0) {
+  if (status === 'error') {
     return (
       <Card>
         <EmptyState
           icon="list"
-          title="No drills yet"
-          message="Build your first drill and it will show up here and on the timer."
-          actionLabel="Create drill"
-          onActionPress={onCreate}
-          testID="state-drills-empty"
+          title={ERROR_TITLE}
+          message="Something went wrong reading them from this device."
+          actionLabel="Try again"
+          onActionPress={onRetry}
+          testID="state-drills-error"
         />
       </Card>
     );
   }
 
-  // Mapped inside the card rather than virtualised: a deliberate bet that a
-  // library built by hand, one drill at a time, stays small. Each row is two
-  // lines of text. Nothing caps the number of drills, so if libraries grow
-  // into the hundreds this becomes a `FlatList`.
+  // No button of its own: the Create Drill card sits right above, and a
+  // second control with the same job would give a screen reader two.
   return (
-    <Card flush>
-      {drills.map((drill, i) => (
-        <DrillRow
-          key={drill.id}
-          drill={drill}
-          divided={i < drills.length - 1}
-          open={drill.id === openRowId}
-          onEdit={onEdit}
-          onOpenChange={onOpenChange}
-          onRequestDelete={onRequestDelete}
-        />
-      ))}
+    <Card>
+      <EmptyState
+        icon="list"
+        title="No drills yet"
+        message="Tap Create Drill above to build your first. It will show up here and on the timer."
+        testID="state-drills-empty"
+      />
     </Card>
   );
+};
+
+const NO_DRILLS: Drill[] = [];
+
+const keyOfDrill = (drill: Drill): string => drill.id;
+
+const DrillSeparator = () => {
+  const styles = useThemedStyles(createStyles);
+  return <View style={styles.separator} />;
 };
 
 /**
@@ -222,6 +215,8 @@ export const DrillsScreen = () => {
   const styles = useThemedStyles(createStyles);
   const navigation = useNavigation<Nav>();
   const { state, reload, deleteDrill } = useDrills();
+  const drills = state.status === 'ready' ? state.drills : NO_DRILLS;
+  const listStatus = state.status === 'ready' ? 'empty' : state.status;
   const [openRowId, setOpenRowId] = useState<string | null>(null);
   // The drill the confirmation sheet is asking about, while it is up.
   const [pendingDelete, setPendingDelete] = useState<Drill | null>(null);
@@ -230,6 +225,10 @@ export const DrillsScreen = () => {
   // A second press of the confirm button lands before `deleting` has
   // rendered, so the guard is a ref.
   const deletingRef = useRef(false);
+
+  // An error takes the place of the loading line, which TalkBack does not
+  // announce on its own.
+  useAnnounce(state.status === 'error' ? ERROR_TITLE : null);
 
   const createDrill = useCallback(
     () => navigation.navigate('SequenceEditor', {}),
@@ -293,49 +292,74 @@ export const DrillsScreen = () => {
     setOpenRowId(null);
   };
 
+  const renderDrill = useCallback(
+    ({ item }: ListRenderItemInfo<Drill>) => (
+      <DrillRow
+        drill={item}
+        open={item.id === openRowId}
+        onEdit={editDrill}
+        onOpenChange={changeOpenRow}
+        onRequestDelete={requestDelete}
+      />
+    ),
+    [openRowId, editDrill, changeOpenRow, requestDelete],
+  );
+
   return (
     <Screen
       title="Drills"
       subtitle="Your library of runnable drills"
-      scrollable
+      contentStyle={styles.screenContent}
       testID="screen-drills"
     >
-      <Card
-        onPress={createDrill}
-        style={styles.createCard}
-        testID="btn-create-drill"
-      >
-        <View style={styles.createIcon}>
-          <Icon name="plus" size={22} color="primary" />
-        </View>
-        <View style={styles.createText}>
-          <Typography variant="bodyStrong">Create Drill</Typography>
-          <Typography variant="caption" color="textTertiary">
-            Name it, then chain the actions in order
-          </Typography>
-        </View>
-        <Icon name="chevron" size={16} color="textTertiary" />
-      </Card>
+      <FlatList
+        data={drills}
+        keyExtractor={keyOfDrill}
+        renderItem={renderDrill}
+        // The rows know which one is open only through `renderItem`.
+        extraData={openRowId}
+        ListHeaderComponent={
+          <View style={styles.listHeader}>
+            <Card
+              onPress={createDrill}
+              style={styles.createCard}
+              testID="btn-create-drill"
+            >
+              <View style={styles.createIcon}>
+                <Icon name="plus" size={22} color="primary" />
+              </View>
+              <View style={styles.createText}>
+                <Typography variant="bodyStrong">Create Drill</Typography>
+                <Typography variant="caption" color="textTertiary">
+                  Name it, then chain the actions in order
+                </Typography>
+              </View>
+              <Icon name="chevron" size={16} color="textTertiary" />
+            </Card>
 
-      <View>
-        <SectionHeader
-          title={
-            state.status === 'ready'
-              ? `Saved · ${state.drills.length}`
-              : 'Saved'
-          }
-          testID="header-saved-drills"
-        />
-        <SavedDrills
-          state={state}
-          openRowId={openRowId}
-          onCreate={createDrill}
-          onEdit={editDrill}
-          onOpenChange={changeOpenRow}
-          onRequestDelete={requestDelete}
-          onRetry={reload}
-        />
-      </View>
+            <SectionHeader
+              title={
+                state.status === 'ready'
+                  ? `Saved · ${state.drills.length}`
+                  : 'Saved'
+              }
+              testID="header-saved-drills"
+            />
+            {state.status === 'ready' && state.refreshFailed ? (
+              <RefreshFailedNotice testID="text-drills-refresh-failed" />
+            ) : null}
+          </View>
+        }
+        ListEmptyComponent={
+          <DrillsStatus status={listStatus} onRetry={reload} />
+        }
+        ItemSeparatorComponent={DrillSeparator}
+        style={styles.list}
+        contentContainerStyle={styles.listContent}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        testID="list-drills"
+      />
 
       <ConfirmSheet
         visible={pendingDelete !== null}

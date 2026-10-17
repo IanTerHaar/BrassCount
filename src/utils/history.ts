@@ -149,6 +149,10 @@ const byNewestRun = (a: Session, b: Session): number =>
 const inTimeUnits = (seconds: number): number =>
   Math.round(seconds * TIME_UNITS_PER_SECOND);
 
+/** A time rounded to the hundredth, the way the screens show it. */
+const shownTime = (seconds: number): number =>
+  Number(seconds.toFixed(SHOWN_DECIMALS));
+
 /**
  * `later - earlier` in seconds, rounded to the millisecond so float error
  * (`2.14 - 2.22`) never reaches the screen.
@@ -186,7 +190,9 @@ export const findPersonalBest = (
 /**
  * A drill's runs newest first, each completed one with how its total time
  * compares to the completed run made before it; a run stopped early in
- * between is passed over. The difference is rounded to the millisecond.
+ * between is passed over. The difference is taken between the totals as
+ * they are shown, to the hundredth, so two runs that both read `2.14s`
+ * never differ by `0.01s`.
  */
 export const describeRuns = (sessions: readonly Session[]): RunSummary[] => {
   const newestFirst = [...sessions].sort(byNewestRun);
@@ -206,7 +212,10 @@ export const describeRuns = (sessions: readonly Session[]): RunSummary[] => {
     const deltaToPrevious =
       previous === undefined
         ? null
-        : difference(session.totalTime, previous.totalTime);
+        : difference(
+            shownTime(session.totalTime),
+            shownTime(previous.totalTime),
+          );
     described.push({
       session,
       deltaToPrevious,

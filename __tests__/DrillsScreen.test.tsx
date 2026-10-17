@@ -323,18 +323,17 @@ describe('DrillsScreen', () => {
       expect(textsOf(tree, 'header-saved-drills')).toEqual(['SAVED · 0']);
     });
 
-    it('opens a new drill from the empty state', async () => {
-      const { tree, currentRoute } = await renderScreen();
-      const create = tree.root.findAllByProps({ label: 'Create drill' })[0];
+    it('leaves creating a drill to the Create Drill card, not a second button', async () => {
+      const { tree } = await renderScreen();
 
-      await act(async () => {
-        create.props.onPress();
-      });
-
-      expect(currentRoute()).toMatchObject({
-        name: 'SequenceEditor',
-        params: {},
-      });
+      // Two near-identical buttons would be read out one after the other.
+      expect(tree.root.findAllByProps({ label: 'Create drill' })).toHaveLength(
+        0,
+      );
+      expect(has(tree, 'btn-create-drill')).toBe(true);
+      expect(textsOf(tree, 'state-drills-empty').join(' ')).toContain(
+        'Create Drill',
+      );
     });
   });
 
@@ -466,18 +465,34 @@ describe('DrillsScreen', () => {
     });
 
     it('announces the failure to a screen reader', async () => {
+      const announce = jest
+        .spyOn(AccessibilityInfo, 'announceForAccessibility')
+        .mockImplementation(() => {});
+      announce.mockClear();
       jest
         .spyOn(DrillStorageService, 'loadAll')
         .mockRejectedValueOnce(failure());
 
+      await renderScreen();
+
+      expect(announce).toHaveBeenCalledWith('Could not load your drills');
+    });
+
+    it('speaks the loading line when a retry replaces the error', async () => {
+      jest
+        .spyOn(DrillStorageService, 'loadAll')
+        .mockRejectedValueOnce(failure())
+        .mockImplementationOnce(() => new Promise<Drill[]>(() => {}));
       const { tree } = await renderScreen();
 
-      const announced = tree.root.findAllByProps({
-        accessibilityLiveRegion: 'polite',
+      const retry = tree.root.findAllByProps({ label: 'Try again' })[0];
+      await act(async () => {
+        retry.props.onPress();
       });
-      expect(announced.flatMap(textsUnder)).toContain(
-        'Could not load your drills',
-      );
+
+      expect(
+        byTestId(tree, 'text-drills-loading')[0].props.accessibilityLiveRegion,
+      ).toBe('polite');
     });
 
     it('ignores an earlier read that answers after a retry', async () => {
@@ -566,6 +581,34 @@ describe('DrillsScreen', () => {
       await goTo('Drills');
 
       expect(rowOrder(tree)).toEqual([second.id, first.id]);
+    });
+
+    it('says the list may be out of date when a refresh fails, until one succeeds', async () => {
+      const announce = jest
+        .spyOn(AccessibilityInfo, 'announceForAccessibility')
+        .mockImplementation(() => {});
+      await seedDrill(BILL_DRILL, '2026-09-01T10:00:00.000Z');
+      const { tree, goTo } = await renderScreen();
+      expect(has(tree, 'text-drills-refresh-failed')).toBe(false);
+      announce.mockClear();
+      await goTo('Elsewhere');
+      jest
+        .spyOn(DrillStorageService, 'loadAll')
+        .mockRejectedValueOnce(failure());
+
+      await goTo('Drills');
+
+      expect(textsOf(tree, 'text-drills-refresh-failed')).toEqual([
+        'Could not refresh. Showing what was loaded earlier.',
+      ]);
+      expect(announce).toHaveBeenCalledWith(
+        'Could not refresh. Showing what was loaded earlier.',
+      );
+
+      await goTo('Elsewhere');
+      await goTo('Drills');
+
+      expect(has(tree, 'text-drills-refresh-failed')).toBe(false);
     });
   });
 

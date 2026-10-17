@@ -23,6 +23,11 @@ export type DrillRunsState =
       runs: RunSummary[];
       /** Best and average time; `null` when the drill has no runs. */
       totals: RunTotals | null;
+      /**
+       * The last refresh failed, so the runs were read earlier. Cleared by
+       * the next read that succeeds.
+       */
+      refreshFailed: boolean;
     };
 
 export type UseDrillRunsResult = {
@@ -46,7 +51,8 @@ const LOADING: DrillRunsState = { status: 'loading' };
  *
  * A refresh keeps the current runs on screen until the new ones arrive, so
  * coming back does not flash a loading state — and keeps them if the read
- * fails. Only a first load (or a `reload`) that fails shows an error.
+ * fails, flagged as `refreshFailed`. Only a first load (or a `reload`)
+ * that fails shows an error.
  */
 export const useDrillRuns = (drillId: string): UseDrillRunsResult => {
   const [loaded, setLoaded] = useState<Loaded>({ drillId, state: LOADING });
@@ -72,6 +78,7 @@ export const useDrillRuns = (drillId: string): UseDrillRunsResult => {
           drillName: drill?.name ?? DELETED_DRILL_NAME,
           runs: describeRuns(sessions),
           totals: summarizeRuns(sessions),
+          refreshFailed: false,
         },
       });
     } catch {
@@ -81,10 +88,14 @@ export const useDrillRuns = (drillId: string): UseDrillRunsResult => {
       // With nothing on screen yet, whichever read failed, there is no
       // true picture to show, so the screen offers a retry. A refresh that
       // fails is different: the runs already shown were read successfully,
-      // so they stay and the next focus reads again.
+      // so they stay, marked as possibly out of date, and the next focus
+      // reads again.
       setLoaded(previous =>
         previous.drillId === drillId && previous.state.status === 'ready'
-          ? previous
+          ? {
+              drillId,
+              state: { ...previous.state, refreshFailed: true },
+            }
           : { drillId, state: { status: 'error' } },
       );
     }
