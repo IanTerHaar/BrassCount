@@ -63,7 +63,7 @@ Calibration lives in memory only, so force-stop the app (`d stop-app`, `d launch
 4.5 Test shot with `clicks -3 500`: Test passed, last test about -3 dBFS, tick on the meter.
 4.6 `d synth clicks -20 500`, Test shot: Test failed, with the feedback line saying so; the threshold is unchanged.
 4.7 Leaving the tab mid-capture cancels it (start a Recalibrate, tap another tab, come back: not Listening).
-4.8 Recalibrate all is inert (documented). Note it, do not file it as a bug.
+4.8 There is no Recalibrate all button under the three cards; the disabled Test button on an uncalibrated card reads a hint (Recalibrate this sound first).
 
 Leave all three sounds calibrated with `clicks -3 500` for the Timer areas, then set `d synth silent`.
 

@@ -42,7 +42,7 @@ const createStyles = (theme: Theme) =>
       borderColor: theme.colors.border,
       borderRadius: theme.radius.md,
       paddingHorizontal: theme.spacing.md,
-      minHeight: 48,
+      minHeight: theme.sizes.touchTarget,
     },
     input: {
       flex: 1,

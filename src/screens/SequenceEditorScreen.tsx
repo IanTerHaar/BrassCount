@@ -305,6 +305,7 @@ const SaveFooter = ({
       <Button
         label={saveState === 'idle' ? idleLabel : 'Saving…'}
         onPress={onSave}
+        busy={saveState !== 'idle'}
         disabled={!canSave}
         testID="btn-save-drill"
       />

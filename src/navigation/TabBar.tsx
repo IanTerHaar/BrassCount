@@ -17,6 +17,13 @@ const tabIcons: Record<keyof MainTabParamList, IconName> = {
   Profile: 'user',
 };
 
+/**
+ * Tab labels grow with the system font only this far, then shrink to fit
+ * their one line: a word that wraps mid-letter reads worse than a smaller one.
+ */
+const LABEL_MAX_FONT_MULTIPLIER = 1.3;
+const LABEL_MIN_FONT_SCALE = 0.7;
+
 const createStyles = (theme: Theme) =>
   StyleSheet.create({
     bar: {
@@ -29,6 +36,8 @@ const createStyles = (theme: Theme) =>
     },
     tab: {
       flex: 1,
+      minHeight: theme.sizes.touchTarget,
+      paddingHorizontal: theme.spacing.xs,
       alignItems: 'center',
       justifyContent: 'center',
       gap: theme.spacing.xs,
@@ -90,6 +99,10 @@ export const TabBar = ({
             <Typography
               variant="overline"
               color={focused ? 'primary' : 'textTertiary'}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={LABEL_MIN_FONT_SCALE}
+              maxFontSizeMultiplier={LABEL_MAX_FONT_MULTIPLIER}
             >
               {label.toUpperCase()}
             </Typography>

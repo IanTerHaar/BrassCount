@@ -183,7 +183,6 @@ const createStyles = (theme: Theme) =>
       paddingHorizontal: theme.spacing.md,
       paddingBottom: theme.spacing.md,
     },
-    compareButton: { minHeight: 48 },
   });
 
 type Layout = {
@@ -443,7 +442,6 @@ const RunCardBase = ({ run, expanded, onToggle, onCompare }: RunCardProps) => {
             variant="secondary"
             onPress={() => onCompare(session.id)}
             accessibilityLabel={`Compare the run on ${spokenDateTime(session.createdAt)} with another run`}
-            style={styles.compareButton}
             testID={`btn-compare-${session.id}`}
           />
         </View>

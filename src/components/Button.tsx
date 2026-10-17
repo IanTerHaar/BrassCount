@@ -28,11 +28,15 @@ type ButtonProps = {
   onPress: () => void;
   variant?: ButtonVariant;
   disabled?: boolean;
+  /** The button's work is under way: announced as busy, and not pressable. */
+  busy?: boolean;
   /**
    * What a screen reader announces in place of `label`. Set it when the
    * visible label repeats on the screen and needs its subject spelled out.
    */
   accessibilityLabel?: string;
+  /** Read after the label; use it to say why the button is disabled. */
+  accessibilityHint?: string;
   style?: StyleProp<ViewStyle>;
   testID?: string;
 };
@@ -42,21 +46,25 @@ export const Button = ({
   onPress,
   variant = 'primary',
   disabled = false,
+  busy = false,
   accessibilityLabel,
+  accessibilityHint,
   style,
   testID,
 }: ButtonProps) => {
   const theme = useTheme();
   const colors = VARIANT_COLORS[variant];
+  const inert = disabled || busy;
 
   const containerStyle: ViewStyle = {
     backgroundColor: theme.colors[colors.fill],
     borderColor: theme.colors.border,
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: theme.radius.md,
+    minHeight: theme.sizes.touchTarget,
     paddingVertical: theme.spacing.sm,
     paddingHorizontal: theme.spacing.md,
-    opacity: disabled ? 0.5 : 1,
+    opacity: inert ? 0.5 : 1,
     alignItems: 'center',
     justifyContent: 'center',
   };
@@ -65,10 +73,11 @@ export const Button = ({
     <TouchableOpacity
       testID={testID}
       onPress={onPress}
-      disabled={disabled}
+      disabled={inert}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
-      accessibilityState={{ disabled }}
+      accessibilityHint={accessibilityHint}
+      accessibilityState={{ disabled: inert, busy }}
       style={style ? [containerStyle, style] : containerStyle}
     >
       {/* Centred, so a label that wraps stays in the middle of the button. */}

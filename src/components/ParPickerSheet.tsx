@@ -1,15 +1,14 @@
 import { useState } from 'react';
 
-import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
-
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import type { Theme } from '@/theme/theme';
 import { MAX_STEP_PAR_SECONDS } from '@/types/drill';
-import { useTheme, useThemedStyles } from '@hooks/useTheme';
+import { useThemedStyles } from '@hooks/useTheme';
 import { parseParInput } from '@utils/drillDraft';
 import { formatSeconds, spokenSeconds } from '@utils/format';
 
+import { BottomSheet } from './BottomSheet';
 import { Button } from './Button';
 import { Icon } from './Icon';
 import { TextField } from './TextField';
@@ -61,27 +60,6 @@ type ParPickerBodyProps = Pick<
 
 const createStyles = (theme: Theme) =>
   StyleSheet.create({
-    // The sheet mirrors the Select sheet so the two feel like the same
-    // primitive.
-    backdrop: {
-      flex: 1,
-      justifyContent: 'flex-end',
-      backgroundColor: theme.colors.overlay,
-    },
-    sheet: {
-      backgroundColor: theme.colors.background,
-      borderTopLeftRadius: theme.radius.lg,
-      borderTopRightRadius: theme.radius.lg,
-      paddingTop: theme.spacing.sm,
-    },
-    grabber: {
-      alignSelf: 'center',
-      width: 36,
-      height: 4,
-      borderRadius: theme.radius.pill,
-      backgroundColor: theme.colors.borderStrong,
-      marginBottom: theme.spacing.sm,
-    },
     header: {
       paddingHorizontal: theme.spacing.lg,
       paddingBottom: theme.spacing.sm,
@@ -98,9 +76,6 @@ const createStyles = (theme: Theme) =>
       gap: theme.spacing.sm,
     },
     customField: { flex: 1 },
-    // As tall as the field beside it, so the two line up and the button is
-    // a full-size target.
-    customButton: { minHeight: 48 },
     presetHeader: {
       paddingHorizontal: theme.spacing.lg,
       paddingTop: theme.spacing.sm,
@@ -141,8 +116,6 @@ const ParPickerBody = ({ stepNumber, par, onSelect }: ParPickerBodyProps) => {
 
   return (
     <>
-      <View style={styles.grabber} />
-
       <View style={styles.header}>
         <Typography
           variant="overline"
@@ -182,7 +155,9 @@ const ParPickerBody = ({ stepNumber, par, onSelect }: ParPickerBodyProps) => {
               }
             }}
             disabled={customPar === null}
-            style={styles.customButton}
+            accessibilityHint={
+              customPar === null ? 'Enter a valid par time first' : undefined
+            }
             testID="btn-par-custom-set"
           />
         </View>
@@ -260,42 +235,14 @@ export const ParPickerSheet = ({
   onSelect,
   onClose,
 }: ParPickerSheetProps) => {
-  const styles = useThemedStyles(createStyles);
-  const theme = useTheme();
-  const insets = useSafeAreaInsets();
-
   return (
-    <Modal
+    <BottomSheet
       visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={onClose}
+      onClose={onClose}
+      closeLabel="Close par picker"
+      backdropTestID="btn-par-close"
     >
-      <Pressable
-        style={styles.backdrop}
-        accessibilityRole="button"
-        accessibilityLabel="Close par picker"
-        onPress={onClose}
-        testID="btn-par-close"
-      >
-        {/* Claims touches inside the sheet so they don't reach the backdrop
-            and dismiss it. A plain View, not a Pressable: a pressable here
-            is read by a screen reader as one run-on label for the whole
-            sheet. */}
-        <View
-          onStartShouldSetResponder={() => true}
-          style={[
-            styles.sheet,
-            { paddingBottom: insets.bottom + theme.spacing.sm },
-          ]}
-        >
-          <ParPickerBody
-            stepNumber={stepNumber}
-            par={par}
-            onSelect={onSelect}
-          />
-        </View>
-      </Pressable>
-    </Modal>
+      <ParPickerBody stepNumber={stepNumber} par={par} onSelect={onSelect} />
+    </BottomSheet>
   );
 };

@@ -175,6 +175,14 @@ const isDisabled = (tree: ReactTestRenderer, testID: string): boolean =>
       node.props.accessibilityState !== undefined,
   )[0].props.accessibilityState.disabled;
 
+/** What a screen reader is told about a button, after its label. */
+const hintOf = (tree: ReactTestRenderer, testID: string): unknown =>
+  tree.root.findAll(
+    node =>
+      node.props.testID === testID &&
+      node.props.accessibilityState !== undefined,
+  )[0].props.accessibilityHint;
+
 const has = (tree: ReactTestRenderer, testID: string): boolean =>
   tree.root.findAllByProps({ testID }).length > 0;
 
@@ -690,6 +698,28 @@ describe('CalibrationScreen', () => {
         });
       });
 
+      it('says why it is disabled on a sound that is not calibrated', () => {
+        const { tree } = renderScreen();
+
+        const test = tree.root.findAll(
+          node =>
+            node.props.testID === 'btn-test-shot' &&
+            node.props.accessibilityHint !== undefined,
+        )[0];
+
+        expect(test.props.accessibilityHint).toBe(
+          'Recalibrate this sound first',
+        );
+      });
+
+      it('has no Recalibrate all button, since each sound is recalibrated on its own card', () => {
+        const { tree } = renderScreen();
+
+        expect(
+          tree.root.findAll(node => node.props.label === 'Recalibrate all'),
+        ).toHaveLength(0);
+      });
+
       it('can be run once the sound is calibrated', async () => {
         const { tree } = renderScreen();
 
@@ -788,6 +818,9 @@ describe('CalibrationScreen', () => {
         expect(isDisabled(tree, 'btn-recalibrate-reload')).toBe(true);
         expect(isDisabled(tree, 'btn-test-reload')).toBe(true);
         expect(isDisabled(tree, 'btn-recalibrate-rack')).toBe(true);
+        expect(hintOf(tree, 'btn-test-reload')).toBe(
+          'Another sound is being measured',
+        );
 
         hear(-12);
         await finishListening();
@@ -796,6 +829,22 @@ describe('CalibrationScreen', () => {
         expect(isDisabled(tree, 'btn-recalibrate-reload')).toBe(false);
         expect(isDisabled(tree, 'btn-test-reload')).toBe(false);
         expect(isDisabled(tree, 'btn-recalibrate-rack')).toBe(false);
+      });
+
+      it('says a calibrated sound cannot be tested while it is being recalibrated', async () => {
+        const { tree } = renderScreen();
+        await capture(tree, 'btn-recalibrate-shot', -12);
+
+        await press(tree, 'btn-recalibrate-shot');
+
+        expect(hintOf(tree, 'btn-test-shot')).toBe('Recalibrating this sound');
+      });
+
+      it('gives a test button that can be pressed no hint', async () => {
+        const { tree } = renderScreen();
+        await capture(tree, 'btn-recalibrate-shot', -12);
+
+        expect(hintOf(tree, 'btn-test-shot')).toBeUndefined();
       });
 
       it('turns the pressed button into Cancel', async () => {
