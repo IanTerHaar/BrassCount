@@ -57,14 +57,23 @@ export const spacing = {
 export const radius = {
   none: 0,
   sm: 4,
+  // Step-number badges: a little rounder than `sm`, still not a pill.
+  badge: 6,
   md: 8,
   lg: 16,
   pill: 999,
 } as const;
 
-// Smallest comfortable touch target on Android, in dp.
+// Fixed dimensions in dp: the smallest comfortable touch target on
+// Android, the drill editor's row controls, and the icon sizes inside them.
 export const sizes = {
   touchTarget: 48,
+  badge: 26,
+  removeButton: 32,
+  moveButton: 40,
+  iconSm: 12,
+  iconMd: 16,
+  iconLg: 18,
 } as const;
 
 export type Spacing = typeof spacing;

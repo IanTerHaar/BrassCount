@@ -60,7 +60,10 @@ export type UseDrillEditorResult = {
   /** Whether `save` would store the draft as it stands. */
   canSave: boolean;
   saveState: DrillSaveState;
-  /** Why the last save failed; `null` once another one starts. */
+  /**
+   * Why the last save failed; `null` once another one starts or the draft
+   * is edited. `missing` stays: the drill is gone, so editing cannot help.
+   */
   saveFailure: DrillSaveFailure | null;
   setName: (name: string) => void;
   /** Add an untimed step at the end: a draw first, a shot after that. */
@@ -180,6 +183,10 @@ export const useDrillEditor = (drillId?: string): UseDrillEditorResult => {
   const whileEditable = useCallback((change: () => void) => {
     if (saveStateRef.current === 'idle') {
       change();
+      // The message describes the draft as it was saved. Once it changes
+      // the message is stale, except that a drill deleted from under the
+      // editor stays deleted whatever is typed.
+      setSaveFailure(previous => (previous === 'missing' ? previous : null));
     }
   }, []);
 
@@ -232,13 +239,18 @@ export const useDrillEditor = (drillId?: string): UseDrillEditorResult => {
     () => drillDraftProblems(name, steps),
     [name, steps],
   );
+  // A save that found the drill gone cannot succeed on a retry.
   const canSave =
-    status === 'ready' && problems.length === 0 && saveState === 'idle';
+    status === 'ready' &&
+    problems.length === 0 &&
+    saveState === 'idle' &&
+    saveFailure !== 'missing';
 
   const save = useCallback(async (): Promise<Drill | null> => {
     if (
       status !== 'ready' ||
       problems.length > 0 ||
+      saveFailure === 'missing' ||
       saveStateRef.current !== 'idle'
     ) {
       return null;
@@ -269,7 +281,7 @@ export const useDrillEditor = (drillId?: string): UseDrillEditorResult => {
       }
       return null;
     }
-  }, [drillId, name, problems, status, steps]);
+  }, [drillId, name, problems, saveFailure, status, steps]);
 
   return {
     status,

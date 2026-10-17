@@ -15,9 +15,18 @@ import { formatSeconds, pluralize } from '@utils/format';
 /** Pars are entered and shown to the hundredth of a second. */
 const PAR_UNITS_PER_SECOND = 100;
 
-/** A number of seconds rounded to the precision a par is kept at. */
+/** Significant digits kept when scaling, enough to absorb float error. */
+const SCALE_PRECISION = 12;
+
+/**
+ * A number of seconds rounded to the precision a par is kept at. The
+ * scaled value is trimmed first so a half hundredth such as 1.005, which
+ * binary floats store just below the half, rounds up as typed.
+ */
 export const roundPar = (seconds: number): number =>
-  Math.round(seconds * PAR_UNITS_PER_SECOND) / PAR_UNITS_PER_SECOND;
+  Math.round(
+    Number((seconds * PAR_UNITS_PER_SECOND).toPrecision(SCALE_PRECISION)),
+  ) / PAR_UNITS_PER_SECOND;
 
 /**
  * Whether `value` is a usable step par: a number of seconds more than 0

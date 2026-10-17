@@ -4,7 +4,7 @@ import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import type { Theme } from '@/theme/theme';
 import { MAX_STEP_PAR_SECONDS } from '@/types/drill';
-import { useThemedStyles } from '@hooks/useTheme';
+import { useTheme, useThemedStyles } from '@hooks/useTheme';
 import { parseParInput } from '@utils/drillDraft';
 import { formatSeconds, spokenSeconds } from '@utils/format';
 
@@ -13,6 +13,10 @@ import { Button } from './Button';
 import { Icon } from './Icon';
 import { TextField } from './TextField';
 import { Typography } from './Typography';
+
+/** Tallest the preset list gets before it scrolls, in dp: 7.5 rows. */
+const OPTION_LIST_MAX_HEIGHT = 420;
+const OPTION_MIN_HEIGHT = 56;
 
 type ParPreset = {
   /** `undefined` is the "No par" row, which leaves the step untimed. */
@@ -89,14 +93,14 @@ const createStyles = (theme: Theme) =>
       gap: theme.spacing.md,
       paddingVertical: theme.spacing.md - theme.spacing.xs,
       paddingHorizontal: theme.spacing.lg,
-      minHeight: 56,
+      minHeight: OPTION_MIN_HEIGHT,
     },
     optionDivider: {
       borderTopWidth: StyleSheet.hairlineWidth,
       borderTopColor: theme.colors.border,
     },
     optionBody: { flex: 1, gap: 2 },
-    optionList: { maxHeight: 420 },
+    optionList: { maxHeight: OPTION_LIST_MAX_HEIGHT },
   });
 
 /**
@@ -106,6 +110,7 @@ const createStyles = (theme: Theme) =>
  */
 const ParPickerBody = ({ stepNumber, par, onSelect }: ParPickerBodyProps) => {
   const styles = useThemedStyles(createStyles);
+  const { sizes } = useTheme();
   // Prefilled with the current par, so a small change is one keystroke.
   const [customText, setCustomText] = useState(
     par === undefined ? '' : par.toFixed(2),
@@ -178,7 +183,15 @@ const ParPickerBody = ({ stepNumber, par, onSelect }: ParPickerBodyProps) => {
         </Typography>
       </View>
 
-      <ScrollView style={styles.optionList} bounces={false}>
+      {/* The list is taller than its cap, so the bar stays drawn: without it
+          nothing shows that the last presets lie below the edge. */}
+      <ScrollView
+        style={styles.optionList}
+        bounces={false}
+        showsVerticalScrollIndicator
+        persistentScrollbar
+        testID="list-par-presets"
+      >
         {PAR_PRESETS.map((preset, i) => {
           const isSelected = preset.seconds === par;
           const spoken =
@@ -213,7 +226,7 @@ const ParPickerBody = ({ stepNumber, par, onSelect }: ParPickerBodyProps) => {
               </View>
 
               {isSelected ? (
-                <Icon name="check" size={18} color="primary" />
+                <Icon name="check" size={sizes.iconLg} color="primary" />
               ) : null}
             </Pressable>
           );

@@ -1,7 +1,15 @@
-import { memo, useCallback, useState } from 'react';
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ElementRef,
+} from 'react';
 
 import {
   AccessibilityInfo,
+  findNodeHandle,
   StyleSheet,
   TouchableOpacity,
   useWindowDimensions,
@@ -38,7 +46,7 @@ import {
   type DrillSaveFailure,
   type DrillSaveState,
 } from '@hooks/useDrillEditor';
-import { useThemedStyles } from '@hooks/useTheme';
+import { useTheme, useThemedStyles } from '@hooks/useTheme';
 import { countShots, stepLabel, stepTypeLabel, totalPar } from '@utils/drill';
 import {
   canAddStep,
@@ -57,6 +65,16 @@ type EditorRoute = RouteProp<RootStackParamList, 'SequenceEditor'>;
  * of cutting the type name short.
  */
 const STEP_SELECT_MIN_WIDTH = 112;
+
+/** Where focus goes after a removal when no step is left beside it. */
+const ADD_STEP_FOCUS = 'add-step';
+
+type PendingFocus = {
+  /** Id of the step to focus, or `ADD_STEP_FOCUS`. */
+  target: string;
+  /** Id of the step being removed: still listed means the removal was refused. */
+  removedId: string;
+};
 
 /** The line under the title once the drill has steps. */
 const describeSteps = (steps: readonly DrillStep[]): string => {
@@ -332,6 +350,7 @@ const DrillEditor = ({ drillId }: DrillEditorProps) => {
   const styles = useThemedStyles(createStyles);
   const navigation = useNavigation<Nav>();
   const { fontScale } = useWindowDimensions();
+  const { sizes } = useTheme();
   const {
     status,
     name,
@@ -357,6 +376,81 @@ const DrillEditor = ({ drillId }: DrillEditorProps) => {
   const [reorderRequested, setReorderRequested] = useState(false);
 
   const closeParPicker = useCallback(() => setParStepId(null), []);
+
+  // The remove buttons and the add button, so focus can be put on one after
+  // a removal took the row the reader was on.
+  const removeButtons = useRef(
+    new Map<string, ElementRef<typeof TouchableOpacity>>(),
+  );
+  const addButton = useRef<ElementRef<typeof TouchableOpacity>>(null);
+  const pendingFocus = useRef<PendingFocus | null>(null);
+  // The header back button and a save landing both ask the navigator to go
+  // back; the first request wins, so the second cannot pop the screen
+  // underneath. Hardware back is left to the navigator, which ignores a
+  // pop for a screen that is already leaving.
+  const leaveRequested = useRef(false);
+  // Read by `removeStepAndRefocus` so it keeps one identity and the memoised
+  // rows are not drawn again on every edit.
+  const stepsRef = useRef(steps);
+  stepsRef.current = steps;
+
+  const registerRemoveButton = useCallback(
+    (id: string, node: ElementRef<typeof TouchableOpacity> | null) => {
+      if (node === null) {
+        removeButtons.current.delete(id);
+      } else {
+        removeButtons.current.set(id, node);
+      }
+    },
+    [],
+  );
+
+  const leave = useCallback(() => {
+    if (leaveRequested.current) {
+      return;
+    }
+    leaveRequested.current = true;
+    navigation.goBack();
+  }, [navigation]);
+
+  useEffect(() => {
+    const pending = pendingFocus.current;
+    if (pending === null) {
+      return;
+    }
+    pendingFocus.current = null;
+    // The step is still there: the removal was refused (a save is under
+    // way), so leave focus alone.
+    if (steps.some(step => step.id === pending.removedId)) {
+      return;
+    }
+    const node =
+      pending.target === ADD_STEP_FOCUS
+        ? addButton.current
+        : removeButtons.current.get(pending.target);
+    const handle = node === undefined ? null : findNodeHandle(node);
+    if (handle !== null) {
+      AccessibilityInfo.setAccessibilityFocus(handle);
+    }
+  }, [steps]);
+
+  const removeStepAndRefocus = useCallback(
+    (id: string) => {
+      const current = stepsRef.current;
+      const index = current.findIndex(step => step.id === id);
+      if (index < 0) {
+        return;
+      }
+      const neighbour = current[index + 1] ?? current[index - 1];
+      pendingFocus.current = {
+        target: neighbour?.id ?? ADD_STEP_FOCUS,
+        removedId: id,
+      };
+      removeStep(id);
+    },
+    [removeStep],
+  );
+
   const toggleReorder = useCallback(
     () => setReorderRequested(previous => !previous),
     [],
@@ -387,22 +481,18 @@ const DrillEditor = ({ drillId }: DrillEditorProps) => {
     AccessibilityInfo.announceForAccessibility(
       `${editing ? 'Saved' : 'Created'} ${drill.name}`,
     );
-    navigation.goBack();
+    leave();
   };
 
   if (status !== 'ready') {
     return (
       <Screen
         title={title}
-        onBack={navigation.goBack}
+        onBack={leave}
         scrollable
         testID="screen-drill-editor"
       >
-        <EditorUnavailable
-          status={status}
-          onRetry={reload}
-          onBack={navigation.goBack}
-        />
+        <EditorUnavailable status={status} onRetry={reload} onBack={leave} />
       </Screen>
     );
   }
@@ -415,7 +505,7 @@ const DrillEditor = ({ drillId }: DrillEditorProps) => {
   return (
     <Screen
       title={title}
-      onBack={navigation.goBack}
+      onBack={leave}
       subtitle={
         steps.length > 0
           ? describeSteps(steps)
@@ -478,13 +568,15 @@ const DrillEditor = ({ drillId }: DrillEditorProps) => {
                 selectMinWidth={STEP_SELECT_MIN_WIDTH * fontScale}
                 onChangeType={changeStepType}
                 onEditPar={setParStepId}
-                onRemove={removeStep}
+                onRemove={removeStepAndRefocus}
                 onMove={moveStep}
+                registerRemove={registerRemoveButton}
               />
             ))
           )}
 
           <TouchableOpacity
+            ref={addButton}
             onPress={addAndAnnounceStep}
             disabled={!hasRoom}
             accessibilityRole="button"
@@ -493,7 +585,7 @@ const DrillEditor = ({ drillId }: DrillEditorProps) => {
             style={[styles.addRow, !hasRoom && styles.addRowDisabled]}
             testID="btn-add-step"
           >
-            <Icon name="plus" size={18} color="primary" />
+            <Icon name="plus" size={sizes.iconLg} color="primary" />
             <Typography variant="bodyStrong" color="primary">
               Add step
             </Typography>
