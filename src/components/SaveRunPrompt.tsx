@@ -44,8 +44,7 @@ const createStyles = (theme: Theme) =>
       gap: theme.spacing.sm,
     },
     // Big targets: the shooter may still be wearing gloves.
-    button: { flex: 1, minHeight: 48 },
-    buttonStacked: { minHeight: 48 },
+    button: { flex: 1 },
     saved: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -90,7 +89,7 @@ export const SaveRunPrompt = ({
   const styles = useThemedStyles(createStyles);
   const { fontScale } = useWindowDimensions();
   const stacked = fontScale > STACK_ACTIONS_ABOVE_FONT_SCALE;
-  const buttonStyle = stacked ? styles.buttonStacked : styles.button;
+  const buttonStyle = stacked ? undefined : styles.button;
 
   if (status === 'saved') {
     return (
@@ -151,6 +150,7 @@ export const SaveRunPrompt = ({
             label={
               saving ? 'Saving…' : completed ? 'Save run' : 'Save as incomplete'
             }
+            busy={saving}
             disabled={saving || refused}
             onPress={onSave}
             style={buttonStyle}

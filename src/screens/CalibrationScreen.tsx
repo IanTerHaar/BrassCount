@@ -94,6 +94,21 @@ const noticeMessages: Record<CalibrationCaptureNoticeKind, string> = {
   failed: 'The microphone could not be used. Try again.',
 };
 
+/** Why the Test button is disabled, for a screen reader; undefined when it is not. */
+const testDisabledReason = (
+  locked: boolean,
+  recalibrating: boolean,
+  status: SoundCalibration['status'],
+): string | undefined => {
+  if (status === 'uncalibrated') {
+    return 'Recalibrate this sound first';
+  }
+  if (locked) {
+    return 'Another sound is being measured';
+  }
+  return recalibrating ? 'Recalibrating this sound' : undefined;
+};
+
 const createStyles = (theme: Theme) =>
   StyleSheet.create({
     sessionBanner: {
@@ -387,6 +402,8 @@ const CalibrationCard = memo((props: CalibrationCardProps) => {
   const listening = activeMode !== null;
   const recalibrating = activeMode === 'recalibrate';
   const testing = activeMode === 'test';
+  const testDisabledHint = testDisabledReason(locked, recalibrating, status);
+  const testDisabled = testDisabledHint !== undefined;
   const chip = statusChip(calibration, listening);
   const feedback = feedbackFor(type, calibration, listening, noticeKind);
 
@@ -528,7 +545,8 @@ const CalibrationCard = memo((props: CalibrationCardProps) => {
             variant="secondary"
             // A test measures a sound against its threshold, so there is
             // nothing to run one against until the sound is calibrated.
-            disabled={locked || recalibrating || status === 'uncalibrated'}
+            disabled={testDisabled}
+            accessibilityHint={testDisabledHint}
             onPress={testing ? onCancel : () => onTest(type.key)}
             testID={`btn-test-${type.key}`}
           />
@@ -589,8 +607,6 @@ export const CalibrationScreen = () => {
           ))}
         </View>
       </View>
-
-      <Button label="Recalibrate all" variant="secondary" onPress={() => {}} />
     </Screen>
   );
 };

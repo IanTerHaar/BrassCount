@@ -206,6 +206,7 @@ const ProfileEditor = ({ profile, onSave, onCancel }: ProfileEditorProps) => {
         <Button
           label={saving ? 'Saving…' : 'Save'}
           onPress={submit}
+          busy={saving}
           disabled={!canSave}
           style={styles.formButton}
           testID="btn-save-profile"

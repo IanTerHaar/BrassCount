@@ -62,7 +62,13 @@ export const radius = {
   pill: 999,
 } as const;
 
+// Smallest comfortable touch target on Android, in dp.
+export const sizes = {
+  touchTarget: 48,
+} as const;
+
 export type Spacing = typeof spacing;
+export type Sizes = typeof sizes;
 export type Radius = typeof radius;
 
 // Typography — variants bundle size + weight + lineHeight so callers pick a
@@ -261,6 +267,7 @@ export type Theme = {
   colors: SemanticColors;
   spacing: Spacing;
   radius: Radius;
+  sizes: Sizes;
   typography: Typography;
   fontWeights: FontWeights;
   fontFamilies: FontFamilies;
@@ -272,6 +279,7 @@ export const lightTheme: Theme = {
   colors: lightColors,
   spacing,
   radius,
+  sizes,
   typography,
   fontWeights,
   fontFamilies,
@@ -283,6 +291,7 @@ export const darkTheme: Theme = {
   colors: darkColors,
   spacing,
   radius,
+  sizes,
   typography,
   fontWeights,
   fontFamilies,

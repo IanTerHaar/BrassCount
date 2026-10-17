@@ -58,7 +58,6 @@ const createStyles = (theme: Theme) =>
     },
     text: { gap: theme.spacing.xs },
     actions: { gap: theme.spacing.sm },
-    button: { minHeight: 48 },
   });
 
 /**
@@ -138,9 +137,8 @@ export const ConfirmSheet = ({
             <Button
               label={busy ? busyLabel : confirmLabel}
               variant="danger"
-              disabled={busy}
+              busy={busy}
               onPress={onConfirm}
-              style={styles.button}
               testID={`${testID}-confirm`}
             />
             <Button
@@ -148,7 +146,6 @@ export const ConfirmSheet = ({
               variant="secondary"
               disabled={busy}
               onPress={onCancel}
-              style={styles.button}
               testID={`${testID}-cancel`}
             />
           </View>
