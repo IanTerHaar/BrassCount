@@ -1,4 +1,11 @@
-import { StyleSheet, View } from 'react-native';
+import { useCallback } from 'react';
+
+import {
+  FlatList,
+  StyleSheet,
+  View,
+  type ListRenderItemInfo,
+} from 'react-native';
 
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -8,9 +15,11 @@ import type { HistoryStackParamList } from '@/types/navigation';
 import { Card } from '@components/Card';
 import { EmptyState } from '@components/EmptyState';
 import { ListRow } from '@components/ListRow';
+import { RefreshFailedNotice } from '@components/RefreshFailedNotice';
 import { Screen } from '@components/Screen';
 import { SectionHeader } from '@components/SectionHeader';
 import { Typography } from '@components/Typography';
+import { useAnnounce } from '@hooks/useAnnounce';
 import {
   useDrillHistory,
   type DrillHistoryState,
@@ -30,8 +39,28 @@ type Nav = NativeStackNavigationProp<HistoryStackParamList, 'HistoryList'>;
 /** Stands in for a counter until the history has been read. */
 const NO_COUNT = '—';
 
+const ERROR_TITLE = 'Could not load your history';
+
+/** What the list holds until the history has been read. */
+const NO_SUMMARIES: DrillHistorySummary[] = [];
+
 const createStyles = (theme: Theme) =>
   StyleSheet.create({
+    // The list runs to the bottom edge, under the floating tab bar.
+    screenContent: { paddingBottom: 0 },
+    // Pulled out to the screen's edges and padded back in, so the cards'
+    // shadows are not cut off at the sides of the list.
+    list: {
+      flex: 1,
+      marginHorizontal: -theme.spacing.lg,
+    },
+    listContent: {
+      paddingHorizontal: theme.spacing.lg,
+      // Clears the floating tab bar so the last card is never trapped.
+      paddingBottom: theme.spacing.xxl * 2,
+    },
+    listHeader: { gap: theme.spacing.md },
+    separator: { height: theme.spacing.md },
     summaryRow: {
       flexDirection: 'row',
       gap: theme.spacing.md,
@@ -121,28 +150,25 @@ const Counter = ({
   );
 };
 
-type DrillHistoryListProps = {
-  state: DrillHistoryState;
-  /** Open the runs recorded for one drill. */
-  onOpen: (summary: DrillHistorySummary) => void;
+type HistoryStatusProps = {
+  /** Why there is no drill to list. */
+  status: 'loading' | 'error' | 'empty';
   onRetry: () => void;
 };
 
-/** What sits under the "Drills" header: the list, or why there is none. */
-const DrillHistoryList = ({
-  state,
-  onOpen,
-  onRetry,
-}: DrillHistoryListProps) => {
+/** What sits under the "Drills" header when there is no drill to list. */
+const HistoryStatus = ({ status, onRetry }: HistoryStatusProps) => {
   const styles = useThemedStyles(createStyles);
 
-  if (state.status === 'loading') {
+  if (status === 'loading') {
     return (
       <Card>
         <View style={styles.loading}>
           <Typography
             variant="body"
             color="textSecondary"
+            // Spoken when "Try again" swaps the error for this line.
+            accessibilityLiveRegion="polite"
             testID="text-history-loading"
           >
             Loading your history…
@@ -152,63 +178,39 @@ const DrillHistoryList = ({
     );
   }
 
-  if (state.status === 'error') {
-    return (
-      <Card>
-        {/* Announced: it takes the place of the loading line on its own. */}
-        <View accessibilityLiveRegion="polite">
-          <EmptyState
-            icon="chart"
-            title="Could not load your history"
-            message="Something went wrong reading it from this device."
-            actionLabel="Try again"
-            onActionPress={onRetry}
-            testID="state-history-error"
-          />
-        </View>
-      </Card>
-    );
-  }
-
-  const { summaries } = state;
-
-  if (summaries.length === 0) {
+  if (status === 'error') {
     return (
       <Card>
         <EmptyState
           icon="chart"
-          title="Nothing here yet"
-          message="Run a drill from the timer and it will appear here."
-          testID="state-history-empty"
+          title={ERROR_TITLE}
+          message="Something went wrong reading it from this device."
+          actionLabel="Try again"
+          onActionPress={onRetry}
+          testID="state-history-error"
         />
       </Card>
     );
   }
 
-  // One reading of the clock for the whole list, so two drills run at the
-  // same moment never show different ages.
-  const now = Date.now();
-
-  // Mapped inside the card rather than virtualised, like the Drills list:
-  // there is one row per drill, not per run, and a library built by hand
-  // stays small. If libraries grow into the hundreds this becomes a
-  // `FlatList`.
   return (
-    <Card flush>
-      {summaries.map((summary, i) => (
-        <ListRow
-          key={summary.drillId}
-          title={summary.drillName}
-          subtitle={describeSummary(summary, now)}
-          accessibilityLabel={speakSummary(summary, now)}
-          onPress={() => onOpen(summary)}
-          divided={i < summaries.length - 1}
-          testID={`row-history-${summary.drillId}`}
-        />
-      ))}
+    <Card>
+      <EmptyState
+        icon="chart"
+        title="Nothing here yet"
+        message="Run a drill from the timer and it will appear here."
+        testID="state-history-empty"
+      />
     </Card>
   );
 };
+
+const HistorySeparator = () => {
+  const styles = useThemedStyles(createStyles);
+  return <View style={styles.separator} />;
+};
+
+const keyOfSummary = (summary: DrillHistorySummary): string => summary.drillId;
 
 /**
  * Every drill that has been run, read from `SessionStorageService` and
@@ -225,43 +227,90 @@ export const HistoryScreen = () => {
   const { state, reload } = useDrillHistory();
 
   const ready = state.status === 'ready';
+  const summaries = ready ? state.summaries : NO_SUMMARIES;
 
-  const openDrill = (summary: DrillHistorySummary) =>
-    navigation.navigate('HistoryDetail', {
-      drillId: summary.drillId,
-      drillName: summary.drillName,
-    });
+  // An error takes the place of the loading line, which TalkBack does not
+  // announce on its own.
+  useAnnounce(state.status === 'error' ? ERROR_TITLE : null);
+
+  // One reading of the clock for the whole list, so two drills run at the
+  // same moment never show different ages.
+  const now = Date.now();
+
+  const openDrill = useCallback(
+    (summary: DrillHistorySummary) =>
+      navigation.navigate('HistoryDetail', {
+        drillId: summary.drillId,
+        drillName: summary.drillName,
+      }),
+    [navigation],
+  );
+
+  const renderDrill = useCallback(
+    ({ item }: ListRenderItemInfo<DrillHistorySummary>) => (
+      <Card flush>
+        <ListRow
+          title={item.drillName}
+          subtitle={describeSummary(item, now)}
+          accessibilityLabel={speakSummary(item, now)}
+          onPress={() => openDrill(item)}
+          testID={`row-history-${item.drillId}`}
+        />
+      </Card>
+    ),
+    [now, openDrill],
+  );
 
   return (
     <Screen
       title="History"
       subtitle="Pick a drill to see previous runs"
-      scrollable
+      contentStyle={styles.screenContent}
       testID="screen-history"
     >
-      <Card>
-        <View style={styles.summaryRow}>
-          <Counter
-            count={ready ? state.runCount : null}
-            noun="run"
-            testID="text-history-run-count"
+      <FlatList
+        data={summaries}
+        keyExtractor={keyOfSummary}
+        renderItem={renderDrill}
+        ListHeaderComponent={
+          <View style={styles.listHeader}>
+            <Card>
+              <View style={styles.summaryRow}>
+                <Counter
+                  count={ready ? state.runCount : null}
+                  noun="run"
+                  testID="text-history-run-count"
+                />
+
+                <View style={styles.summaryDivider} />
+
+                <Counter
+                  count={ready ? summaries.length : null}
+                  noun="drill"
+                  highlighted
+                  testID="text-history-drill-count"
+                />
+              </View>
+            </Card>
+
+            <SectionHeader title="Drills" />
+            {ready && state.refreshFailed ? (
+              <RefreshFailedNotice testID="text-history-refresh-failed" />
+            ) : null}
+          </View>
+        }
+        ListEmptyComponent={
+          <HistoryStatus
+            status={state.status === 'ready' ? 'empty' : state.status}
+            onRetry={reload}
           />
-
-          <View style={styles.summaryDivider} />
-
-          <Counter
-            count={ready ? state.summaries.length : null}
-            noun="drill"
-            highlighted
-            testID="text-history-drill-count"
-          />
-        </View>
-      </Card>
-
-      <View>
-        <SectionHeader title="Drills" />
-        <DrillHistoryList state={state} onOpen={openDrill} onRetry={reload} />
-      </View>
+        }
+        ItemSeparatorComponent={HistorySeparator}
+        style={styles.list}
+        contentContainerStyle={styles.listContent}
+        showsVerticalScrollIndicator={false}
+        testID="list-history"
+      />
     </Screen>
   );
 };

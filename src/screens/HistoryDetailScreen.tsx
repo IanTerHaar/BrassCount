@@ -19,11 +19,13 @@ import type { Theme } from '@/theme/theme';
 import type { HistoryStackParamList } from '@/types/navigation';
 import { Card } from '@components/Card';
 import { EmptyState } from '@components/EmptyState';
+import { RefreshFailedNotice } from '@components/RefreshFailedNotice';
 import { RunCard } from '@components/RunCard';
 import { RunPickerSheet } from '@components/RunPickerSheet';
 import { Screen } from '@components/Screen';
 import { SectionHeader } from '@components/SectionHeader';
 import { Typography } from '@components/Typography';
+import { useAnnounce } from '@hooks/useAnnounce';
 import { useDrillRuns, type DrillRunsState } from '@hooks/useDrillRuns';
 import { useThemedStyles } from '@hooks/useTheme';
 import { formatSeconds, pluralize, spokenSeconds } from '@utils/format';
@@ -37,6 +39,8 @@ type HistoryDetailNavigation = NativeStackNavigationProp<
 
 /** Stands in for a time until the runs have been read, or when there are none. */
 const NO_TIME = '—';
+
+const ERROR_TITLE = 'Could not load the runs';
 
 /** What the list holds until the runs have been read. */
 const NO_RUNS: RunSummary[] = [];
@@ -135,10 +139,12 @@ const SummaryFigure = ({
 type RunListHeaderProps = {
   /** `null` until the runs have been read, and when there are none. */
   totals: RunTotals | null;
+  /** Reading the runs again failed, so those listed are from earlier. */
+  refreshFailed: boolean;
 };
 
 /** What scrolls above the runs: the Best / Avg card and the list's title. */
-const RunListHeader = ({ totals }: RunListHeaderProps) => {
+const RunListHeader = ({ totals, refreshFailed }: RunListHeaderProps) => {
   const styles = useThemedStyles(createStyles);
   const { fontScale } = useWindowDimensions();
   const stacked = fontScale > STACK_SUMMARY_ABOVE_FONT_SCALE;
@@ -171,6 +177,9 @@ const RunListHeader = ({ totals }: RunListHeaderProps) => {
       </Card>
 
       <SectionHeader title="Runs" />
+      {refreshFailed ? (
+        <RefreshFailedNotice testID="text-history-detail-refresh-failed" />
+      ) : null}
     </View>
   );
 };
@@ -191,6 +200,8 @@ const RunListStatus = ({ status, onRetry }: RunListStatusProps) => {
           <Typography
             variant="body"
             color="textSecondary"
+            // Spoken when "Try again" swaps the error for this line.
+            accessibilityLiveRegion="polite"
             testID="text-history-detail-loading"
           >
             Loading the runs…
@@ -203,17 +214,14 @@ const RunListStatus = ({ status, onRetry }: RunListStatusProps) => {
   if (status === 'error') {
     return (
       <Card>
-        {/* Announced: it takes the place of the loading line on its own. */}
-        <View accessibilityLiveRegion="polite">
-          <EmptyState
-            icon="chart"
-            title="Could not load the runs"
-            message="Something went wrong reading them from this device."
-            actionLabel="Try again"
-            onActionPress={onRetry}
-            testID="state-history-detail-error"
-          />
-        </View>
+        <EmptyState
+          icon="chart"
+          title={ERROR_TITLE}
+          message="Something went wrong reading them from this device."
+          actionLabel="Try again"
+          onActionPress={onRetry}
+          testID="state-history-detail-error"
+        />
       </Card>
     );
   }
@@ -256,6 +264,9 @@ export const HistoryDetailScreen = () => {
   const { state, reload } = useDrillRuns(drillId);
 
   const ready = state.status === 'ready';
+  // An error takes the place of the loading line, which TalkBack does not
+  // announce on its own.
+  useAnnounce(state.status === 'error' ? ERROR_TITLE : null);
   const runs = ready ? state.runs : NO_RUNS;
   // The newest run starts open, so the run just made is in full view;
   // every other card starts closed.
@@ -340,7 +351,10 @@ export const HistoryDetailScreen = () => {
         keyExtractor={keyOfRun}
         renderItem={renderRun}
         ListHeaderComponent={
-          <RunListHeader totals={ready ? state.totals : null} />
+          <RunListHeader
+            totals={ready ? state.totals : null}
+            refreshFailed={ready && state.refreshFailed}
+          />
         }
         ListEmptyComponent={
           <RunListStatus status={state.status} onRetry={reload} />

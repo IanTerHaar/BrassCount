@@ -335,6 +335,16 @@ describe('describeRuns', () => {
     expect(newest.deltaToPrevious).toBe(-0.08);
   });
 
+  it('compares the totals as shown, to the hundredth', () => {
+    const [newest] = describeRuns([
+      session('a', 2.144, '2026-10-02T10:00:00.000Z'),
+      session('a', 2.136, '2026-10-01T10:00:00.000Z'),
+    ]);
+
+    // Both read 2.14s, so the chip must not claim they differ by 0.01s.
+    expect(newest.deltaToPrevious).toBe(0);
+  });
+
   it('reports two equal runs as no difference, not minus zero', () => {
     const [newest] = describeRuns([
       session('a', 2.5, '2026-10-02T10:00:00.000Z'),

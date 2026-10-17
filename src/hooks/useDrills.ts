@@ -9,7 +9,15 @@ export type DrillsState =
   | { status: 'loading' }
   | { status: 'error' }
   /** Most recently changed first, as `DrillStorageService` returns them. */
-  | { status: 'ready'; drills: Drill[] };
+  | {
+      status: 'ready';
+      drills: Drill[];
+      /**
+       * The last refresh failed, so the list was read earlier. Cleared by
+       * the next read that succeeds.
+       */
+      refreshFailed: boolean;
+    };
 
 export type UseDrillsResult = {
   state: DrillsState;
@@ -30,7 +38,8 @@ export type UseDrillsResult = {
  *
  * A refresh keeps the current list on screen until the new one arrives, so
  * coming back does not flash a loading state — and keeps it if the read
- * fails. Only a first load (or a `reload`) that fails shows an error.
+ * fails, flagged as `refreshFailed`. Only a first load (or a `reload`)
+ * that fails shows an error.
  *
  * A drill deleted here leaves the list as soon as storage has let go of
  * it. Its sessions are left alone: deleting a drill does not delete the
@@ -57,17 +66,19 @@ export const useDrills = (): UseDrillsResult => {
       const drills = stored.filter(
         drill => !deletedIdsRef.current.has(drill.id),
       );
-      setState({ status: 'ready', drills });
+      setState({ status: 'ready', drills, refreshFailed: false });
     } catch {
       if (loadIdRef.current !== loadId) {
         return;
       }
       // With nothing on screen yet there is no list to show, so the screen
       // offers a retry. A refresh that fails is different: the list already
-      // shown was read successfully, so it stays and the next focus reads
-      // again.
+      // shown was read successfully, so it stays, marked as possibly out of
+      // date, and the next focus reads again.
       setState(previous =>
-        previous.status === 'ready' ? previous : { status: 'error' },
+        previous.status === 'ready'
+          ? { ...previous, refreshFailed: true }
+          : { status: 'error' },
       );
     }
   }, []);
@@ -100,7 +111,7 @@ export const useDrills = (): UseDrillsResult => {
     setState(previous =>
       previous.status === 'ready'
         ? {
-            status: 'ready',
+            ...previous,
             drills: previous.drills.filter(drill => drill.id !== id),
           }
         : previous,
